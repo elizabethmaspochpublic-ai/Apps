@@ -2484,7 +2484,7 @@ game({
     const orients = SHAPES.map(s => { const seen = new Map(); let c = norm(s); for (let f = 0; f < 2; f++) { for (let r = 0; r < 4; r++) { seen.set(JSON.stringify(c), c); c = rot(c); } c = flp(c); } return [...seen.values()]; });
     let grid = Array(S * S).fill(-1);
     let left = P.map(() => SHAPES.map((_, i) => i)), out = P.map(() => false), placedAny = P.map(() => false), lastPiece = P.map(() => -1);
-    let turn = 0, pick = null, shape = null, anchor = null, done = false, lastCells = [];
+    let stuck = false, turn = 0, pick = null, shape = null, anchor = null, done = false, lastCells = [];
     const anchorIdx = cs => { const cx = cs.reduce((a, c) => a + c[0], 0) / cs.length, cy = cs.reduce((a, c) => a + c[1], 0) / cs.length; let b = 0, bd = 1e9; cs.forEach((c, i) => { const d = (c[0] - cx) ** 2 + (c[1] - cy) ** 2; if (d < bd) { bd = d; b = i; } }); return b; };
     function cellsAt(cs, ax, ay) { const a = cs[anchorIdx(cs)]; return cs.map(([x, y]) => [x - a[0] + ax, y - a[1] + ay]); }
     function valid(p, cells) {
@@ -2552,7 +2552,8 @@ game({
       bPass.disabled = done;
       score.innerHTML = '';
       P.forEach((p, i) => score.append(h('span', { class: out[i] ? 'x' : '' }, h('i', { style: { background: p.color } }), `${p.name} ${left[i].reduce((a, k) => a + SHAPES[k].length, 0)} left`)));
-      if (!done) api.status(`${P[turn].name}'s turn`, P[turn], `${left[turn].length} pieces left`);
+      bPass.textContent = stuck ? 'End turn' : "I'm out";
+      if (!done) api.status(stuck ? `${P[turn].name}: no piece fits` : `${P[turn].name}'s turn`, P[turn], stuck ? 'Tap End turn' : `${left[turn].length} pieces left`);
     }
     function fitStart() {
       if (placedAny[turn] || !shape) return;
@@ -2586,14 +2587,17 @@ game({
         const ok = await api.modal({ title: 'Stop placing pieces?', body: '<p>You can still place at least one piece. If you stop now, you sit out the rest of the game.</p>', actions: [{ label: 'Keep playing', value: false }, { label: "I'm out", value: true, primary: true }] });
         if (!ok || !api.alive()) return;
       }
-      out[turn] = true; pick = null; shape = null; anchor = null; advance();
+      out[turn] = true; stuck = false; pick = null; shape = null; anchor = null; advance();
     }
     function advance() {
       for (let k = 1; k <= n; k++) {
         const p = (turn + k) % n;
         if (out[p]) continue;
-        if (!canMove(p)) { out[p] = true; api.toast(`${P[p].name} has no moves left`); continue; }
-        turn = p; render(); kick(); return;
+        if (!canMove(p)) {
+          if (!P[p].cpu) { turn = p; stuck = true; render(); return; } // the person sees it and ends the turn themselves
+          out[p] = true; api.toast(`${P[p].name} has no moves left`); continue;
+        }
+        stuck = false; turn = p; render(); kick(); return;
       }
       done = true; render();
       const scores = P.map((_, i) => { const rem = left[i].reduce((a, k) => a + SHAPES[k].length, 0); return rem ? -rem : (lastPiece[i] === 0 ? 20 : 15); });
@@ -3967,7 +3971,7 @@ game({
   id: 'pachisi', name: 'Pachisi', meta: '2–4 players', multi: true, ai: true,
   options: [{ key: 'players', label: 'Number of players', def: 2, choices: [2, 3, 4].map(v => ({ v, label: String(v) })) }],
   icon: '<svg viewBox="0 0 60 60"><rect x="4" y="4" width="52" height="52" rx="4" fill="var(--wood-soft)" stroke="var(--wood)" stroke-width="2"/><rect x="25" y="4" width="10" height="52" fill="var(--surface)" stroke="var(--wood)"/><rect x="4" y="25" width="52" height="10" fill="var(--surface)" stroke="var(--wood)"/><path d="M25 25h10v10H25z" fill="var(--wood)"/><circle cx="14" cy="14" r="5" fill="var(--p2)"/><circle cx="46" cy="14" r="5" fill="var(--p3)"/><circle cx="14" cy="46" r="5" fill="var(--p1)"/><circle cx="46" cy="46" r="5" fill="var(--p4)"/></svg>',
-  rules: '<p>Race your four pawns all the way around the board and into the centre.</p><ul><li>Roll two dice. Use each die to move a pawn (both dice can move the same pawn). Tap a pawn, then choose which die to use.</li><li>To bring a pawn out of its nest you need a <b>5</b>: either one die showing 5, or both dice adding up to 5.</li><li>Land exactly on a single enemy pawn to send it home to its nest and earn a 20-space bonus move. Pawns on safe squares (marked with a star) can\'t be captured.</li><li>Two pawns of the same colour on one square form a <b>blockade</b> that nobody can pass.</li><li>After going all the way around, a pawn turns into its own coloured lane. It needs an exact count to reach the centre, which earns a 10-space bonus.</li><li>Rolling doubles gives you another roll. Three doubles in a row sends your most advanced pawn back to its nest.</li></ul>',
+  rules: '<p>Race your four pawns all the way around the board and into the centre.</p><ul><li>Roll two dice. Use each die to move a pawn (both dice can move the same pawn). Tap a pawn, then choose which die to use.</li><li>To bring a pawn out of its nest you need a <b>5</b>: either one die showing 5, or both dice adding up to 5.</li><li>Land exactly on a single enemy pawn to send it home to its nest and earn a 20-space bonus move. Pawns on safe squares (marked with a star) can\'t be captured.</li><li>Two pawns of the same colour on one square form a <b>blockade</b> that nobody can pass.</li><li>After going all the way around, a pawn turns into its own coloured lane. It needs an exact count to reach the centre, which earns a 10-space bonus.</li><li>When your only pawn left is in its coloured lane, you roll just <b>one die</b>.</li><li>Rolling doubles gives you another roll. Three doubles in a row sends your most advanced pawn back to its nest.</li></ul>',
   start(root, api) {
     const P = api.players, n = P.length;
     const SIDE = n === 2 ? [2, 0] : n === 3 ? [2, 3, 0] : [2, 3, 0, 1]; // board side for each player: 0 top, 1 right, 2 bottom, 3 left
@@ -3981,7 +3985,7 @@ game({
     const SAFE = new Set([0, 17, 34, 51, ...[0, 1, 2, 3].flatMap(s => [mOf(s), eOf(s)])]);
     const HOME = 71;
     let pos = P.map(() => [-1, -1, -1, -1]);
-    let turn = 0, dice = null, avail = [], doubles = 0, sel = -1, done = false, log = 'Roll the dice to start.', rolling = false;
+    let stuck = false, stuckMsg = '', turn = 0, dice = null, avail = [], doubles = 0, sel = -1, done = false, log = 'Roll the dice to start.', rolling = false;
     const kOf = (p, x) => (eOf(SIDE[p]) + x) % 68; // perimeter index for progress x (0..63)
     function occupants(k) { const out = []; P.forEach((_, p) => pos[p].forEach((x, i) => { if (x >= 0 && x <= 63 && kOf(p, x) === k) out.push([p, i]); })); return out; }
     const blockadeAt = k => { const o = occupants(k); return o.length === 2 && o[0][0] === o[1][0]; };
@@ -4070,13 +4074,15 @@ game({
       seatsEl.innerHTML = '';
       P.forEach((p, i) => seatsEl.append(Cards.seat(p, [h('b', {}, `${pos[i].filter(x => x >= HOME).length}/4 home`)], { cur: i === turn })));
       diceEl.innerHTML = '';
-      if (!dice) diceEl.append(h('button', { class: 'btn primary big', disabled: done || rolling, onclick: roll }, 'Roll dice'));
+      if (!dice) diceEl.append(h('button', { class: 'btn primary big', disabled: done || rolling, onclick: roll }, oneDie(turn) ? 'Roll one die' : 'Roll dice'));
       else {
         dice.forEach((v, k) => { const used = !avail.some(a => a.kind === 'die' && a.id === k); const d = h('div', { class: 'pa-die' + (used ? ' used' : ''), 'aria-label': `Die ${v}${used ? ', used' : ''}` }); for (let q = 0; q < 9; q++) d.append(h('i', { class: PIPS[v].includes(q) ? 'on' : '' })); diceEl.append(d); });
         avail.filter(a => a.kind === 'bonus').forEach(a => diceEl.append(h('span', { class: 'pa-bonus' }, `Bonus ${a.v}`)));
       }
       optsEl.innerHTML = '';
-      if (sel >= 0 && dice && !done) {
+      if (stuck && dice && !done) {
+        optsEl.append(h('span', { style: { fontWeight: 700 } }, stuckMsg), h('button', { class: 'btn primary', onclick: () => { stuck = false; avail = []; endTurn(false); } }, dice.length === 2 && dice[0] === dice[1] && doubles > 0 ? 'Continue' : 'End turn'));
+      } else if (sel >= 0 && dice && !done) {
         const x = pos[turn][sel];
         if (x === -1) enterOpts(turn).forEach(ks => optsEl.append(h('button', { class: 'btn primary', onclick: () => enter(sel, ks) }, ks.length === 2 ? 'Bring out (use both dice)' : 'Bring out (use the 5)')));
         else avail.forEach((a, k) => { if (target(turn, sel, a.v)) optsEl.append(h('button', { class: 'btn primary', onclick: () => move(sel, k) }, a.kind === 'bonus' ? `Bonus: move ${a.v}` : `Move ${a.v}`)); });
@@ -4085,24 +4091,27 @@ game({
       if (!done) api.status(`${P[turn].name}'s turn`, P[turn], doubles ? `Doubles ×${doubles}` : '');
     }
     function tapPawn(p, i) { if (p !== turn || !dice || done) return; sel = sel === i ? -1 : i; render(); }
+    // house rule: when your only pawn left is in its coloured home lane, you roll one die
+    const oneDie = p => { const left = pos[p].filter(x => x < HOME); return left.length === 1 && left[0] > 63; };
     function roll() {
       if (rolling) return; rolling = true;
+      const single = oneDie(turn);
       let t = 0;
       const iv = setInterval(() => {
-        dice = [1 + rint(6), 1 + rint(6)]; avail = []; render();
+        dice = single ? [1 + rint(6)] : [1 + rint(6), 1 + rint(6)]; avail = []; render();
         if (++t >= 6) {
           clearInterval(iv); rolling = false;
-          avail = [{ kind: 'die', id: 0, v: dice[0] }, { kind: 'die', id: 1, v: dice[1] }];
-          if (dice[0] === dice[1]) {
+          avail = dice.map((v, id) => ({ kind: 'die', id, v }));
+          if (!single && dice[0] === dice[1]) {
             doubles++;
             if (doubles === 3) {
               const best = pos[turn].map((x, i) => [x, i]).filter(([x]) => x >= 0 && x <= 63).sort((a, b) => b[0] - a[0])[0];
               if (best) pos[turn][best[1]] = -1;
               log = `${P[turn].name} rolled doubles three times` + (best ? ' and their lead pawn goes back to the nest.' : '.');
-              doubles = 0; return endTurn(true);
+              doubles = 0; if (!P[turn].cpu) { avail = []; stuck = true; stuckMsg = 'Three doubles in a row ends your turn.'; sel = -1; render(); return; } return endTurn(true);
             }
           }
-          log = `${P[turn].name} rolled ${dice[0]} and ${dice[1]}${dice[0] === dice[1] ? ' (doubles, roll again after)' : ''}.`;
+          log = single ? `${P[turn].name}'s last pawn is in the home lane, so they roll one die: ${dice[0]}.` : `${P[turn].name} rolled ${dice[0]} and ${dice[1]}${dice[0] === dice[1] ? ' (doubles, roll again after)' : ''}.`;
           sel = -1; afterAction();
         }
       }, 60);
@@ -4130,13 +4139,17 @@ game({
       afterAction();
     }
     function afterAction() {
-      if (avail.length && !anyMove()) { log += avail.length ? ' No more legal moves.' : ''; avail = []; }
+      if (avail.length && !anyMove()) {
+        log += ' No more legal moves.';
+        if (!P[turn].cpu) { stuck = true; stuckMsg = 'No legal moves with this roll.'; sel = -1; render(); return; } // let the person see the roll and end the turn themselves
+        avail = [];
+      }
       if (!avail.length) return endTurn(false);
       render(); kick();
     }
     function endTurn(forceNext) {
-      const again = !forceNext && dice && dice[0] === dice[1] && doubles > 0;
-      dice = null; avail = []; sel = -1;
+      const again = !forceNext && dice && dice.length === 2 && dice[0] === dice[1] && doubles > 0;
+      dice = null; avail = []; sel = -1; stuck = false;
       if (again) { log += ` ${P[turn].name} rolls again.`; render(); kick(); return; }
       doubles = 0; turn = (turn + 1) % n; render();
       api.toast(`${P[turn].name}'s turn`);
@@ -4449,7 +4462,7 @@ game({
     const hF = Array.from({ length: N - 1 }, () => Array(N).fill(-1)), vF = Array.from({ length: N }, () => Array(N - 1).fill(-1));
     const pieces = P.map(() => []); // [r,c]
     const order = []; for (let k = 0; k < PER; k++) { const row = P.map((_, i) => i); order.push(...(k % 2 ? row.reverse() : row)); }
-    let placeStep = 0, turn = order[0], phase = 'place', sel = null, moved = null, done = false, lastFence = null, round = 1;
+    let stuck = false, placeStep = 0, turn = order[0], phase = 'place', sel = null, moved = null, done = false, lastFence = null, round = 1;
     const inb = (r, c) => r >= 0 && c >= 0 && r < N && c < N;
     const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     function open(r, c, dr, dc, H = hF, Vv = vF) {
@@ -4523,7 +4536,8 @@ game({
       sc.innerHTML = ''; P.forEach((p, i) => sc.append(h('span', { class: i === turn && !done ? 'cur' : '' }, h('i', { style: { background: p.color } }), `${p.name} ${phase === 'place' ? pieces[i].length + '/' + PER + ' placed' : s[i] + ' squares'}`)));
       ctl.innerHTML = '';
       if (moved && !done) ctl.append(h('button', { class: 'btn', onclick: undoMove }, 'Move a different piece'));
-      hint.textContent = done ? '' : phase === 'place' ? 'Tap an empty square to place a piece.' : moved ? 'Now tap a dashed side to build a fence there.' : sel != null ? 'Tap a dot to move there, or tap the piece again to stay put.' : 'Tap one of your pieces.';
+      if (stuck && !done) ctl.append(h('button', { class: 'btn primary', onclick: advance }, 'End turn'));
+      hint.textContent = done ? '' : stuck ? 'None of your pieces can move or build a fence this turn.' : phase === 'place' ? 'Tap an empty square to place a piece.' : moved ? 'Now tap a dashed side to build a fence there.' : sel != null ? 'Tap a dot to move there, or tap the piece again to stay put.' : 'Tap one of your pieces.';
       if (!done) api.status(`${P[turn].name}'s turn`, P[turn], phase === 'place' ? 'Placing pieces' : `Round ${round}`);
     }
     let from = null;
@@ -4555,9 +4569,12 @@ game({
       advance();
     }
     function advance() {
+      stuck = false;
+      const can = p => pieces[p].some((_, i) => canAct(p, i));
+      if (!P.some((_, p) => can(p))) return end();
       for (let k = 1; k <= n; k++) {
         const p = (turn + k) % n;
-        if (pieces[p].some((_, i) => canAct(p, i))) { if (p <= turn) round++; turn = p; render(); kick(); return; }
+        if (can(p) || !P[p].cpu) { if (p <= turn) round++; turn = p; stuck = !can(p); render(); if (!stuck) kick(); return; }
       }
       end();
     }
