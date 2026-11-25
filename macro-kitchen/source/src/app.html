@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Macro Kitchen</title>
+<meta name="description" content="Plan meals, track macro goals, store ingredients and recipes, and build a grocery list.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Macros">
+<meta name="theme-color" content="#f6f5f2">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{
+  --bg:#f6f5f2; --card:#ffffff; --text:#1d1d1f; --muted:#6e6e73; --line:#e3e1dc; --track:#ecebe7;
+  --accent:#2f7d5b; --accent-ink:#ffffff; --danger:#c0392b; --chip:#eef4f0; --warn:#b45309;
+  --kcal:#c2410c; --p:#2563eb; --c:#a16207; --f:#9333ea;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#111113; --card:#1c1c1f; --text:#f2f2f4; --muted:#9a9aa0; --line:#2e2e33; --track:#2a2a2f;
+    --accent:#4fb588; --accent-ink:#0b1a13; --danger:#ef6b5b; --chip:#1f2a24; --warn:#f59e0b;
+    --kcal:#fb923c; --p:#60a5fa; --c:#facc15; --f:#c084fc;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;-webkit-text-size-adjust:100%}
+body{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+header{position:sticky;top:0;z-index:5;background:var(--bg);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 8px;border-bottom:1px solid var(--line)}
+header .row{display:flex;align-items:center;gap:8px}
+header h1{font-size:22px;margin:0;flex:1}
+main{padding:12px 16px;max-width:720px;margin:0 auto}
+nav.tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);
+  border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:6}
+nav.tabs button{flex:1;border:0;background:none;padding:8px 0 10px;font-size:11px;color:var(--muted)}
+nav.tabs button .ico{display:block;font-size:20px;line-height:1.25}
+nav.tabs button.on{color:var(--accent);font-weight:600}
+button{font:inherit;cursor:pointer;color:inherit}
+.btn{border:0;border-radius:10px;padding:10px 14px;background:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.ghost{background:transparent;color:var(--accent);padding:8px 10px}
+.btn.soft{background:var(--chip);color:var(--accent)}
+.btn.danger{background:transparent;color:var(--danger)}
+.btn.small{padding:6px 10px;font-size:14px}
+.btn:disabled{opacity:.5}
+input,select{font:inherit;font-size:16px;color:var(--text);background:var(--card);
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0}
+input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+label.f{display:block;margin:0 0 12px}
+label.f span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:8px}
+.search{margin-bottom:12px}
+.list{background:var(--card);border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.item{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);width:100%;
+  background:none;border-left:0;border-right:0;border-top:0;text-align:left;color:inherit}
+.item:last-child{border-bottom:0}
+.item .name{font-weight:600}
+.sub{font-size:13px;color:var(--muted)}
+.grow{flex:1;min-width:0}
+.chev{color:var(--muted)}
+.empty{color:var(--muted);text-align:center;padding:28px 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+.card h3{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:8px}
+.card h3 .grow{flex:1}
+.macros{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.macros div b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.macros div small{font-size:12px;color:var(--muted)}
+.k b{color:var(--kcal)} .p b{color:var(--p)} .c b{color:var(--c)} .fa b{color:var(--f)}
+.seg{display:flex;background:var(--chip);border-radius:10px;padding:3px;margin-bottom:10px}
+.seg button{flex:1;border:0;background:none;padding:6px;border-radius:8px;font-size:14px}
+.seg button.on{background:var(--card);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.days{display:flex;gap:4px;margin-bottom:12px}
+.days button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:7px 0;font-size:13px}
+.days button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.days button .dot{display:block;height:5px;width:5px;border-radius:50%;margin:2px auto 0;background:currentColor;opacity:0}
+.days button.has .dot{opacity:.7}
+.line{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.line:last-child{border-bottom:0}
+.line input.qty{width:72px;text-align:right;padding:10px 8px}
+.line select.unit{width:86px;padding:10px 4px}
+.tag{font-size:11px;background:var(--chip);color:var(--accent);border-radius:6px;padding:1px 6px;margin-left:4px;font-weight:600;vertical-align:middle}
+.hint{font-size:13px;color:var(--muted);margin:6px 0 0}
+.err{color:var(--danger);font-size:14px;margin:8px 0}
+.warn{color:var(--warn);font-size:13px}
+.actions{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:8px;flex-wrap:wrap}
+dialog{border:0;border-radius:16px;padding:0;width:min(560px,calc(100vw - 24px));max-height:88vh;background:var(--bg);color:var(--text)}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+dialog .dh{display:flex;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);gap:8px}
+dialog .dh b{flex:1}
+dialog .db{padding:12px 14px;overflow:auto;max-height:76vh}
+.toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translateX(-50%);
+  background:var(--text);color:var(--bg);padding:8px 14px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+.toast.show{opacity:1}
+.nowrap{white-space:nowrap}
+/* gauges */
+.gauges{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px}
+.gauge{text-align:center;position:relative}
+.gauge svg{width:100%;max-width:170px;display:block;margin:0 auto}
+.gauge .val{position:absolute;left:0;right:0;top:44%;font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
+.gauge .of{font-size:12px;color:var(--muted);margin-top:-4px}
+.gauge .lbl{font-size:13px;font-weight:600;margin-top:2px}
+.gauge.over .val{color:var(--danger)}
+.convbar{display:flex;gap:8px;margin-bottom:14px}
+.convbar button{flex:1}
+.bigres{font-size:28px;font-weight:700;text-align:center;padding:12px 0 2px;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+.chips button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 11px;font-size:14px}
+.gitem{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+.gitem:last-child{border-bottom:0}
+.gitem.have .name{text-decoration:line-through;color:var(--muted)}
+.scanbox{border:1px dashed var(--accent);border-radius:12px;padding:12px;margin-bottom:12px;background:var(--chip)}
+details summary{cursor:pointer;color:var(--accent);font-size:14px;margin:4px 0}
+pre.ocr{white-space:pre-wrap;font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:200px;overflow:auto}
+</style>
+</head>
+<body>
+<header><div class="row"><h1 id="title">Home</h1><span id="hdrBtn"></span></div></header>
+<main id="main"></main>
+<nav class="tabs">
+  <button data-tab="home"><span class="ico">🏠</span>Home</button>
+  <button data-tab="recipes"><span class="ico">🍲</span>Recipes</button>
+  <button data-tab="ingredients"><span class="ico">🥕</span>Ingredients</button>
+  <button data-tab="grocery"><span class="ico">🛒</span>Groceries</button>
+  <button data-tab="settings"><span class="ico">⚙️</span>Backup</button>
+</nav>
+
+<dialog id="picker"><div class="dh"><b>Add to recipe</b><button class="btn ghost" data-close>Close</button></div>
+  <div class="db"><div class="seg" id="pickSeg"><button data-k="ing" class="on">Ingredients</button><button data-k="rec">Recipes</button></div>
+  <input class="search" id="pickSearch" placeholder="Search" autocomplete="off"><div class="list" id="pickList"></div></div></dialog>
+<dialog id="dlg"><div class="dh"><b id="dlgTitle"></b><button class="btn ghost" data-close>Close</button></div><div class="db" id="dlgBody"></div></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================
+   Units
+   ========================================================= */
+// t: m = mass (factor in grams), v = volume (factor in ml), p = count
+const UNITS = {
+  g:{t:"m",f:1,l:"g"}, kg:{t:"m",f:1000,l:"kg"}, mg:{t:"m",f:0.001,l:"mg"},
+  oz:{t:"m",f:28.349523,l:"oz"}, lb:{t:"m",f:453.59237,l:"lb"},
+  tsp:{t:"v",f:4.928922,l:"tsp"}, tbsp:{t:"v",f:14.786765,l:"tbsp"}, floz:{t:"v",f:29.57353,l:"fl oz"},
+  cup:{t:"v",f:236.5882,l:"cup"}, pint:{t:"v",f:473.1765,l:"pint"}, quart:{t:"v",f:946.3529,l:"quart"},
+  gallon:{t:"v",f:3785.412,l:"gallon"}, ml:{t:"v",f:1,l:"ml"}, l:{t:"v",f:1000,l:"L"},
+  piece:{t:"p",f:1,l:"piece"}
+};
+const MASS = ["g","oz","lb","kg","mg"], VOL = ["tsp","tbsp","cup","floz","pint","quart","gallon","ml","l"];
+const CUP = UNITS.cup.f;
+const FRAC = {"¼":.25,"½":.5,"¾":.75,"⅓":1/3,"⅔":2/3,"⅛":.125,"⅜":.375,"⅝":.625,"⅞":.875,"⅙":1/6,"⅚":5/6,"⅕":.2};
+// Parses "2", "1.5", "1,5", "1/4", "1 1/2", "1-1/2", "1½", "½"
+function parseQty(s){
+  if(typeof s==="number") return s;
+  s=String(s??"").trim().replace(",", ".");
+  if(!s) return NaN;
+  let extra=0;
+  s=s.replace(/[¼½¾⅓⅔⅛⅜⅝⅞⅙⅚⅕]/g, m=>{ extra+=FRAC[m]; return " "; }).trim();
+  if(!s) return extra;
+  let m;
+  if((m=s.match(/^(\d+(?:\.\d+)?)$/))) return +m[1]+extra;
+  if((m=s.match(/^(\d+)\s*\/\s*(\d+)$/))) return +m[2] ? m[1]/m[2]+extra : NaN;
+  if((m=s.match(/^(\d+)[\s-]+(\d+)\s*\/\s*(\d+)$/))) return +m[3] ? +m[1]+m[2]/m[3]+extra : NaN;
+  return NaN;
+}
+// Nice display: 0.25 cup -> "¼", 1.5 -> "1 ½" for kitchen units; decimals otherwise
+const NICE = [[0,""],[.125,"⅛"],[.25,"¼"],[1/3,"⅓"],[.375,"⅜"],[.5,"½"],[.625,"⅝"],[2/3,"⅔"],[.75,"¾"],[.875,"⅞"],[1,""]];
+function fmtQty(n, unit){
+  if(!isFinite(n)) return "–";
+  const kitchen = ["tsp","tbsp","cup","pint","quart","gallon","piece"].includes(unit);
+  if(kitchen && n>0 && n<50){
+    const w=Math.floor(n), fr=n-w;
+    let best=NICE[0]; for(const c of NICE) if(Math.abs(fr-c[0])<Math.abs(fr-best[0])) best=c;
+    if(Math.abs(fr-best[0]) <= 0.02*Math.max(n,1) + 0.01){
+      const whole = best[0]===1 ? w+1 : w;
+      if(whole===0 && best[1]) return best[1];
+      return best[1] ? `${whole} ${best[1]}` : String(whole);
+    }
+  }
+  const d = n>=100?0 : n>=10?1 : 2;
+  return fmt(n,d);
+}
+const unitLabel = (u, n=1) => {
+  const l=UNITS[u]?.l||u;
+  if(n<=1 || ["g","kg","mg","oz","lb","ml","L","tsp","tbsp","fl oz"].includes(l)) return l;
+  return l==="piece"?"pieces" : l+"s";
+};
+function unitOptions(list, sel){
+  const groups = {m:"Weight", v:"Volume", p:"Count", r:"Recipe"};
+  let html="", cur=null;
+  for(const u of list){
+    const t = u==="serving"||u==="batch" ? "r" : UNITS[u].t;
+    if(t!==cur){ if(cur) html+="</optgroup>"; html+=`<optgroup label="${groups[t]}">`; cur=t; }
+    const lab = u==="serving"?"serving": u==="batch"?"batch" : UNITS[u].l;
+    html+=`<option value="${u}" ${u===sel?"selected":""}>${lab}</option>`;
+  }
+  return html+"</optgroup>";
+}
+// grams in 1 unit of `u` for ingredient `x` (null when it can't be converted)
+function gramsPerUnit(x, u){
+  const U=UNITS[u]; if(!U) return null;
+  if(U.t==="m") return U.f;
+  if(U.t==="v") return x && x.gPerMl ? U.f*x.gPerMl : null;
+  return x && x.gPerPiece ? x.gPerPiece : null;
+}
+const unitsFor = x => [...MASS, ...(x&&x.gPerMl?VOL:[]), ...(x&&x.gPerPiece?["piece"]:[])];
+
+/* =========================================================
+   Data
+   ========================================================= */
+// Ingredient: {id, name, per:{kcal,protein,carbs,fat} PER GRAM, gPerMl?, gPerPiece?, serving:{qty,unit,grams}}
+// Recipe: {id, name, servings, finalWeight, items:[{kind:'ing'|'rec', id, qty, unit}]}
+// Plan: {goals:{kcal,protein,carbs,fat} per day, entries:[{id, recipeId, servings, day 0=Mon..6=Sun}], have:{ingId:true}, extra:[{id,text,have}]}
+const KEY="macro-kitchen-v1";
+let db=load();
+function load(){
+  let d=null;
+  try{ const s=localStorage.getItem(KEY); if(s) d=JSON.parse(s); }catch(e){}
+  if(!d || !Array.isArray(d.ingredients) || !Array.isArray(d.recipes)) d={ingredients:[],recipes:[]};
+  return migrate(d);
+}
+function migrate(d){
+  for(const x of d.ingredients){ if(!x.serving) x.serving={qty:"100",unit:"g",grams:100}; }
+  for(const r of d.recipes) for(const it of r.items){ if(!it.unit) it.unit = it.kind==="ing"?"g":"serving"; }
+  if(!d.plan) d.plan={};
+  d.plan.goals = Object.assign({kcal:2000,protein:120,carbs:225,fat:65}, d.plan.goals||{});
+  d.plan.entries = d.plan.entries||[]; d.plan.have=d.plan.have||{}; d.plan.extra=d.plan.extra||[];
+  return d;
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(db)); }catch(e){ toast("Could not save on this device"); } }
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+const ing=id=>db.ingredients.find(x=>x.id===id);
+const rec=id=>db.recipes.find(x=>x.id===id);
+const MAC=["kcal","protein","carbs","fat"];
+const MACNAME={kcal:"Calories",protein:"Protein",carbs:"Carbs",fat:"Fat"};
+const zero=()=>({kcal:0,protein:0,carbs:0,fat:0});
+function add(a,b,m=1){ for(const k of MAC) a[k]+=(b[k]||0)*m; return a; }
+
+/* ---------- Cycle guard ---------- */
+function uses(fromId, targetId, seen=new Set()){
+  if(fromId===targetId) return true;
+  if(seen.has(fromId)) return false; seen.add(fromId);
+  const r=rec(fromId); if(!r) return false;
+  return r.items.some(it=>it.kind==="rec" && uses(it.id, targetId, seen));
+}
+const canNest=(parentId, childId)=>!uses(childId, parentId);
+
+/* ---------- Totals ---------- */
+// For an item: {m: macros, grams, frac (sub-recipe share of a batch), bad: unconvertible/missing}
+function itemInfo(it, stack=[]){
+  const q=parseQty(it.qty); const qq=isNaN(q)?0:q;
+  if(it.kind==="ing"){
+    const x=ing(it.id); if(!x) return {m:zero(),grams:0,bad:"missing"};
+    const gpu=gramsPerUnit(x,it.unit); if(gpu==null) return {m:zero(),grams:0,bad:"unit"};
+    const g=qq*gpu; return {m:add(zero(),x.per,g), grams:g};
+  }
+  const sr=rec(it.id); if(!sr) return {m:zero(),grams:0,bad:"missing"};
+  const sub=totals(it.id, stack); let frac;
+  if(it.unit==="serving") frac=qq/(Number(sr.servings)||1);
+  else if(it.unit==="batch") frac=qq;
+  else { const g=qq*(UNITS[it.unit]?.f||1); frac=sub.weight? g/sub.weight : 0; }
+  return {m:add(zero(),sub.total,frac), grams:frac*sub.weight, frac, bad: sub.bad};
+}
+function totals(id, stack=[]){
+  const r=rec(id); if(!r || stack.includes(id)) return {total:zero(),weight:0,rawWeight:0,bad:"missing"};
+  const t=zero(); let w=0, bad=null;
+  for(const it of r.items){ const i=itemInfo(it, stack.concat(id)); add(t,i.m); w+=i.grams; if(i.bad) bad=i.bad; }
+  const fw=Number(r.finalWeight)||0;
+  return {total:t, weight: fw>0?fw:w, rawWeight:w, bad};
+}
+// Flattens a recipe into raw ingredient grams. factor = number of batches.
+function flatten(id, factor, acc, stack=[]){
+  const r=rec(id); if(!r || stack.includes(id)) return acc;
+  for(const it of r.items){
+    if(it.kind==="ing"){ const i=itemInfo(it); if(ing(it.id)) acc[it.id]=(acc[it.id]||0)+i.grams*factor; if(i.bad==="unit") acc._bad=true; }
+    else { const i=itemInfo(it, stack.concat(id)); if(i.frac) flatten(it.id, factor*i.frac, acc, stack.concat(id)); }
+  }
+  return acc;
+}
+
+/* =========================================================
+   Formatting / UI plumbing
+   ========================================================= */
+const fmt=(n,d=0)=>(Math.round(n*10**d)/10**d).toLocaleString(undefined,{maximumFractionDigits:d});
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function macroBlock(m, scale=1){
+  return `<div class="macros"><div class="k"><b>${fmt(m.kcal*scale)}</b><small>kcal</small></div>
+    <div class="p"><b>${fmt(m.protein*scale,1)}</b><small>protein g</small></div>
+    <div class="c"><b>${fmt(m.carbs*scale,1)}</b><small>carbs g</small></div>
+    <div class="fa"><b>${fmt(m.fat*scale,1)}</b><small>fat g</small></div></div>`;
+}
+const short=m=>`${fmt(m.kcal)} kcal · P ${fmt(m.protein,1)} · C ${fmt(m.carbs,1)} · F ${fmt(m.fat,1)}`;
+const servingText=x=>`${x.serving.qty} ${unitLabel(x.serving.unit, parseQty(x.serving.qty))}${UNITS[x.serving.unit].t!=="m"?` (${fmt(x.serving.grams)} g)`:""}`;
+const $=s=>document.querySelector(s);
+const main=$("#main");
+let route={tab:"home"};
+let query={recipes:"",ingredients:""};
+let pref={view:"serving", homeMode:"day", day:todayIdx(), conv:{amt:"1",from:"cup",to:"g",ing:""}};
+try{ Object.assign(pref, JSON.parse(localStorage.getItem(KEY+"-pref")||"{}")); }catch(e){}
+pref.day = todayIdx();
+const savePref=()=>{ try{ localStorage.setItem(KEY+"-pref", JSON.stringify(pref)); }catch(e){} };
+function todayIdx(){ return (new Date().getDay()+6)%7; }
+const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const DAYS_LONG=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),1800); }
+function go(r){ route=r; render(); window.scrollTo(0,0); }
+document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>go({tab:b.dataset.tab}));
+document.querySelectorAll("dialog [data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());
+function setHeader(title, btnHtml, onBtn){
+  $("#title").textContent=title; const h=$("#hdrBtn"); h.innerHTML=btnHtml||"";
+  const b=h.querySelector("button"); if(b&&onBtn) b.onclick=onBtn;
+}
+function openDlg(title, html){ $("#dlgTitle").textContent=title; $("#dlgBody").innerHTML=html; const d=$("#dlg"); if(!d.open) d.showModal(); return $("#dlgBody"); }
+function render(){
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.classList.toggle("on", b.dataset.tab===route.tab));
+  ({home:renderHome, grocery:renderGrocery, settings:renderSettings,
+    ingredients:()=>route.id?renderIngEdit():renderIngList(),
+    recipes:()=>route.id?renderRecipe():renderRecList()}[route.tab]||renderHome)();
+}
+const byName=(a,b)=>a.name.localeCompare(b.name);
+function liveSearch(id, key, rerender){
+  const qi=$(id); qi.oninput=()=>{ query[key]=qi.value; const p=qi.selectionStart; rerender(); const n=$(id); n.focus(); n.setSelectionRange(p,p); };
+}
+
+/* =========================================================
+   Home: goals, gauges, plan, calculator
+   ========================================================= */
+function entryMacros(e){
+  const r=rec(e.recipeId); if(!r) return zero();
+  const s=Number(r.servings)||1; return add(zero(), totals(r.id).total, (Number(e.servings)||0)/s);
+}
+function gaugeSvg(frac, color){
+  const f=Math.max(0,Math.min(1,frac));
+  return `<svg viewBox="0 0 120 68" aria-hidden="true">
+    <path d="M10 62 A50 50 0 0 1 110 62" fill="none" stroke="var(--track)" stroke-width="11" stroke-linecap="round" pathLength="100"/>
+    ${f>0?`<path d="M10 62 A50 50 0 0 1 110 62" fill="none" stroke="${color}" stroke-width="11" stroke-linecap="round" pathLength="100" stroke-dasharray="${(f*100).toFixed(2)} 200"/>`:""}
+  </svg>`;
+}
+function renderHome(){
+  setHeader("Home", `<button class="btn small">+ Plan meal</button>`, ()=>openPlanDialog());
+  const P=db.plan, week=pref.homeMode==="week";
+  const entries = week ? P.entries : P.entries.filter(e=>e.day===pref.day);
+  const got=zero(); entries.forEach(e=>add(got, entryMacros(e)));
+  const mult = week?7:1;
+  const colors={kcal:"var(--kcal)",protein:"var(--p)",carbs:"var(--c)",fat:"var(--f)"};
+  const gauges = MAC.map(k=>{ const goal=(Number(P.goals[k])||0)*mult, v=got[k], fr=goal?v/goal:0;
+    return `<div class="gauge ${fr>1.05?"over":""}">${gaugeSvg(fr, colors[k])}
+      <div class="val">${fmt(v)}</div><div class="of">of ${fmt(goal)}${k==="kcal"?"":" g"}</div>
+      <div class="lbl" style="color:${colors[k]}">${MACNAME[k]}${goal?` · ${fmt(fr*100)}%`:""}</div></div>`; }).join("");
+  const daysHave = new Set(P.entries.map(e=>e.day));
+  let planHtml;
+  if(!P.entries.length) planHtml=`<div class="empty" style="padding:14px">${db.recipes.length?"No meals planned yet. Tap <b>+ Plan meal</b> to pick recipes you intend to cook.":"Add ingredients and recipes first, then plan meals here."}</div>`;
+  else if(week) planHtml = DAYS.map((d,i)=>{ const es=P.entries.filter(e=>e.day===i); if(!es.length) return "";
+      return `<div class="sub" style="margin-top:8px;font-weight:600">${DAYS_LONG[i]}</div>${es.map(planRow).join("")}`; }).join("");
+  else planHtml = entries.length ? entries.map(planRow).join("") : `<div class="empty" style="padding:14px">Nothing planned for ${DAYS_LONG[pref.day]}.</div>`;
+  main.innerHTML=`
+    <div class="seg" id="mode"><button data-m="day" class="${!week?"on":""}">Day</button><button data-m="week" class="${week?"on":""}">Week</button></div>
+    ${week?"":`<div class="days" id="days">${DAYS.map((d,i)=>`<button data-d="${i}" class="${i===pref.day?"on":""} ${daysHave.has(i)?"has":""}">${d}<span class="dot"></span></button>`).join("")}</div>`}
+    <div class="card"><h3><span class="grow">${week?"This week vs weekly goal":DAYS_LONG[pref.day]+" vs daily goal"}</span><button class="btn ghost small" id="goals">Edit goals</button></h3>
+      <div class="gauges">${gauges}</div></div>
+    <div class="convbar"><button class="btn soft" id="conv">⇄ Conversion calculator</button><button class="btn soft" id="toGroc">🛒 Grocery list</button></div>
+    <div class="card"><h3><span class="grow">${week?"Planned this week":"Planned meals"}</span>${P.entries.length?`<button class="btn danger small" id="clr">Clear week</button>`:""}</h3>${planHtml}</div>`;
+  main.querySelectorAll("#mode button").forEach(b=>b.onclick=()=>{ pref.homeMode=b.dataset.m; savePref(); renderHome(); });
+  main.querySelectorAll("#days button").forEach(b=>b.onclick=()=>{ pref.day=+b.dataset.d; renderHome(); });
+  $("#goals").onclick=openGoals; $("#conv").onclick=()=>openConverter(); $("#toGroc").onclick=()=>go({tab:"grocery"});
+  if($("#clr")) $("#clr").onclick=()=>{ if(confirm("Remove all planned meals for the week?")){ P.entries=[]; P.have={}; save(); renderHome(); } };
+  bindPlanRows(renderHome);
+}
+function planRow(e){
+  const r=rec(e.recipeId);
+  return `<div class="line" data-e="${e.id}"><div class="grow"><div>${r?esc(r.name):"<i>(deleted recipe)</i>"}</div>
+    <div class="sub">${short(entryMacros(e))}</div></div>
+    <input class="qty pq" inputmode="decimal" value="${esc(e.servings)}" aria-label="Servings"><span class="sub">serv</span>
+    <button class="btn danger small prm" aria-label="Remove">✕</button></div>`;
+}
+function bindPlanRows(rerender){
+  main.querySelectorAll(".line[data-e]").forEach(l=>{
+    const e=db.plan.entries.find(z=>z.id===l.dataset.e);
+    l.querySelector(".pq").onchange=ev=>{ const n=parseQty(ev.target.value); e.servings= n>0?n:1; save(); rerender(); };
+    l.querySelector(".prm").onclick=()=>{ db.plan.entries=db.plan.entries.filter(z=>z!==e); save(); rerender(); };
+  });
+}
+function openPlanDialog(recipeId){
+  if(!db.recipes.length) return toast("Make a recipe first");
+  const sel=new Set([pref.homeMode==="week"?todayIdx():pref.day]);
+  const body=openDlg("Plan a meal", `
+    <label class="f"><span>Recipe</span><select id="pr">${db.recipes.slice().sort(byName).map(r=>`<option value="${r.id}" ${r.id===recipeId?"selected":""}>${esc(r.name)}</option>`).join("")}</select></label>
+    <label class="f"><span>Servings you'll eat (each day)</span><input id="ps" inputmode="decimal" value="1"></label>
+    <span class="sub">Which days</span>
+    <div class="days" id="pd" style="margin-top:4px">${DAYS.map((d,i)=>`<button data-d="${i}" class="${sel.has(i)?"on":""}">${d}</button>`).join("")}</div>
+    <div class="chips"><button data-q="all">Every day</button><button data-q="wk">Weekdays</button><button data-q="none">Clear</button></div>
+    <p class="hint" id="pinfo"></p><div class="err" id="perr"></div>
+    <div class="actions"><span></span><button class="btn" id="padd">Add to plan</button></div>`);
+  const info=()=>{ const r=rec($("#pr").value); const s=Number(r.servings)||1; const n=parseQty($("#ps").value)||0;
+    $("#pinfo").textContent=`Recipe makes ${fmt(s,2)} serving${s===1?"":"s"}. ${sel.size} day${sel.size===1?"":"s"} × ${fmt(n,2)} = ${fmt(sel.size*n,2)} servings (${fmt(sel.size*n/s,2)} batch${sel.size*n/s===1?"":"es"} to cook).`; };
+  const paint=()=>{ body.querySelectorAll("#pd button").forEach(b=>b.classList.toggle("on", sel.has(+b.dataset.d))); info(); };
+  body.querySelectorAll("#pd button").forEach(b=>b.onclick=()=>{ const d=+b.dataset.d; sel.has(d)?sel.delete(d):sel.add(d); paint(); });
+  body.querySelectorAll(".chips button").forEach(b=>b.onclick=()=>{ sel.clear(); if(b.dataset.q==="all") DAYS.forEach((_,i)=>sel.add(i)); if(b.dataset.q==="wk") [0,1,2,3,4].forEach(i=>sel.add(i)); paint(); });
+  $("#pr").onchange=info; $("#ps").oninput=info; info();
+  $("#padd").onclick=()=>{
+    const n=parseQty($("#ps").value); if(!(n>0)) return $("#perr").textContent="Enter how many servings.";
+    if(!sel.size) return $("#perr").textContent="Pick at least one day.";
+    [...sel].sort().forEach(d=>db.plan.entries.push({id:uid(), recipeId:$("#pr").value, servings:n, day:d}));
+    save(); $("#dlg").close(); toast("Added to plan"); if(route.tab==="home") renderHome();
+  };
+}
+function openGoals(){
+  const g=db.plan.goals;
+  const body=openDlg("Daily goals", `<div class="grid2">${MAC.map(k=>`<label class="f"><span>${MACNAME[k]}${k==="kcal"?" (kcal)":" (g)"}</span><input id="g_${k}" inputmode="decimal" value="${esc(g[k])}"></label>`).join("")}</div>
+    <p class="hint" id="gcal"></p><p class="hint">Week view uses 7 × these goals.</p>
+    <div class="actions"><span></span><button class="btn" id="gsave">Save</button></div>`);
+  const upd=()=>{ const p=+$("#g_protein").value||0, c=+$("#g_carbs").value||0, f=+$("#g_fat").value||0;
+    $("#gcal").textContent=`Your macros add up to about ${fmt(p*4+c*4+f*9)} kcal (4 per g protein and carbs, 9 per g fat).`; };
+  body.querySelectorAll("input").forEach(i=>i.oninput=upd); upd();
+  $("#gsave").onclick=()=>{ for(const k of MAC){ const n=parseQty($("#g_"+k).value); g[k]=n>=0?n:0; } save(); $("#dlg").close(); render(); };
+}
+function openConverter(){
+  const c=pref.conv; const all=[...MASS,...VOL,"piece"];
+  const body=openDlg("Conversion calculator", `
+    <div class="grid3"><input id="ca" inputmode="text" value="${esc(c.amt)}" aria-label="Amount">
+      <select id="cf">${unitOptions(all,c.from)}</select>
+      <select id="ct">${unitOptions(all,c.to)}</select></div>
+    <div class="chips" id="cq">${["⅛","¼","⅓","½","⅔","¾","1","2"].map(v=>`<button>${v}</button>`).join("")}<button id="csw">⇅ swap</button></div>
+    <label class="f"><span>Ingredient (for cups ↔ grams)</span><select id="ci"><option value="">None (weight ↔ weight, volume ↔ volume)</option><option value="__water" ${c.ing==="__water"?"selected":""}>Water / milk (1 ml ≈ 1 g)</option>
+      ${db.ingredients.filter(x=>x.gPerMl||x.gPerPiece).sort(byName).map(x=>`<option value="${x.id}" ${x.id===c.ing?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>
+    <div class="bigres" id="cr"></div><p class="hint" style="text-align:center" id="cx"></p>
+    <p class="hint">Amounts like 1/4, 1 1/2 or ¾ work. Ingredients appear in the list once they have a cup or piece weight.</p>`);
+  const calc=()=>{
+    c.amt=$("#ca").value; c.from=$("#cf").value; c.to=$("#ct").value; c.ing=$("#ci").value; savePref();
+    const q=parseQty(c.amt); const F=UNITS[c.from], T=UNITS[c.to];
+    if(isNaN(q)){ $("#cr").textContent="–"; $("#cx").textContent="Enter an amount."; return; }
+    const x = c.ing==="__water" ? {gPerMl:1} : ing(c.ing);
+    let out=null, why="";
+    if(F.t===T.t && F.t!=="p") out=q*F.f/T.f;
+    else if(F.t===T.t) out=q;
+    else { const gf=gramsPerUnit(x,c.from), gt=gramsPerUnit(x,c.to);
+      if(gf!=null && gt!=null) out=q*gf/gt; else why = x ? "This ingredient has no weight for that unit yet." : "Pick an ingredient to convert between weight and volume."; }
+    $("#cr").textContent = out==null ? "–" : `${fmtQty(out,c.to)} ${unitLabel(c.to,out)}`;
+    $("#cx").textContent = out==null ? why : `${c.amt} ${unitLabel(c.from,q)} = ${fmt(out,3)} ${unitLabel(c.to,out)}`;
+  };
+  body.querySelectorAll("#ca,#cf,#ct,#ci").forEach(e=>{ e.oninput=calc; e.onchange=calc; });
+  body.querySelectorAll("#cq button:not(#csw)").forEach(b=>b.onclick=()=>{ $("#ca").value=b.textContent; calc(); });
+  $("#csw").onclick=()=>{ const f=$("#cf").value; $("#cf").value=$("#ct").value; $("#ct").value=f; calc(); };
+  calc();
+}
+
+/* =========================================================
+   Grocery list
+   ========================================================= */
+function bestAmount(x, grams){
+  const parts=[`${fmt(grams)} g`];
+  const su=x.serving?.unit;
+  if(su && UNITS[su].t==="v" && x.gPerMl){
+    const ml=grams/x.gPerMl; const u = ml>=CUP/4 ? (ml>=4*CUP*4 ? "quart" : "cup") : ml>=UNITS.tbsp.f ? "tbsp" : "tsp";
+    parts.unshift(`${fmtQty(ml/UNITS[u].f,u)} ${unitLabel(u, ml/UNITS[u].f)}`);
+  } else if(su==="piece" && x.gPerPiece){
+    const n=grams/x.gPerPiece; parts.unshift(`${fmtQty(Math.ceil(n*4-0.01)/4,"piece")} ${unitLabel("piece",n)}`);
+  } else if(grams>=454) parts.push(`${fmt(grams/UNITS.lb.f,2)} lb`);
+  else parts.push(`${fmt(grams/UNITS.oz.f,1)} oz`);
+  return parts.join(" · ");
+}
+function groceryData(){
+  const acc={};
+  for(const e of db.plan.entries){ const r=rec(e.recipeId); if(!r) continue;
+    flatten(r.id, (Number(e.servings)||0)/(Number(r.servings)||1), acc); }
+  const bad=acc._bad; delete acc._bad;
+  return {items:Object.entries(acc).filter(([,g])=>g>0).map(([id,g])=>({x:ing(id), g})).filter(o=>o.x).sort((a,b)=>byName(a.x,b.x)), bad};
+}
+function renderGrocery(){
+  setHeader("Groceries", `<button class="btn small">Share</button>`, shareGrocery);
+  const P=db.plan, {items,bad}=groceryData();
+  const need=items.filter(o=>!P.have[o.x.id]), have=items.filter(o=>P.have[o.x.id]);
+  const xNeed=P.extra.filter(e=>!e.have), xHave=P.extra.filter(e=>e.have);
+  const recipes=[...new Set(P.entries.map(e=>e.recipeId))].map(rec).filter(Boolean);
+  const row=o=>`<label class="gitem ${P.have[o.x.id]?"have":""}"><input type="checkbox" data-i="${o.x.id}" ${P.have[o.x.id]?"checked":""}>
+     <div class="grow"><div class="name">${esc(o.x.name)}</div><div class="sub">${bestAmount(o.x,o.g)}</div></div></label>`;
+  const xrow=e=>`<label class="gitem ${e.have?"have":""}"><input type="checkbox" data-x="${e.id}" ${e.have?"checked":""}>
+     <div class="grow name">${esc(e.text)}</div><button class="btn danger small" data-xd="${e.id}" aria-label="Remove">✕</button></label>`;
+  main.innerHTML=`
+    ${recipes.length?`<p class="sub" style="margin:0 0 10px">From this week's plan: ${recipes.map(r=>esc(r.name)).join(", ")}</p>`:""}
+    ${bad?`<p class="warn">Some recipe items use a unit the ingredient can't convert, so they're left out.</p>`:""}
+    <div class="card"><h3><span class="grow">To buy (${need.length+xNeed.length})</span></h3>
+      ${need.length||xNeed.length ? need.map(row).join("")+xNeed.map(xrow).join("") : `<div class="empty" style="padding:14px">${items.length?"You have everything. 🎉":"Plan some meals on the Home tab and the ingredients show up here."}</div>`}
+      <div class="actions" style="flex-wrap:nowrap"><input id="xt" placeholder="Add something else (e.g. paper towels)"><button class="btn small" id="xa">Add</button></div></div>
+    ${have.length||xHave.length?`<div class="card"><h3><span class="grow">Already have / in cart (${have.length+xHave.length})</span><button class="btn ghost small" id="reset">Uncheck all</button></h3>${have.map(row).join("")}${xHave.map(xrow).join("")}</div>`:""}
+    <p class="hint">Tick what you already have at home; it moves out of the to-buy list.</p>`;
+  main.querySelectorAll("input[data-i]").forEach(cb=>cb.onchange=()=>{ if(cb.checked) P.have[cb.dataset.i]=true; else delete P.have[cb.dataset.i]; save(); renderGrocery(); });
+  main.querySelectorAll("input[data-x]").forEach(cb=>cb.onchange=()=>{ const e=P.extra.find(z=>z.id===cb.dataset.x); e.have=cb.checked; save(); renderGrocery(); });
+  main.querySelectorAll("[data-xd]").forEach(b=>b.onclick=ev=>{ ev.preventDefault(); P.extra=P.extra.filter(z=>z.id!==b.dataset.xd); save(); renderGrocery(); });
+  const addX=()=>{ const t=$("#xt").value.trim(); if(!t) return; P.extra.push({id:uid(),text:t,have:false}); save(); renderGrocery(); };
+  $("#xa").onclick=addX; $("#xt").onkeydown=e=>{ if(e.key==="Enter") addX(); };
+  if($("#reset")) $("#reset").onclick=()=>{ P.have={}; P.extra.forEach(e=>e.have=false); save(); renderGrocery(); };
+}
+async function shareGrocery(){
+  const {items}=groceryData(); const P=db.plan;
+  const lines=[...items.filter(o=>!P.have[o.x.id]).map(o=>`• ${o.x.name}: ${bestAmount(o.x,o.g)}`), ...P.extra.filter(e=>!e.have).map(e=>`• ${e.text}`)];
+  if(!lines.length) return toast("Nothing to buy");
+  const text="Grocery list\n"+lines.join("\n");
+  try{ if(navigator.share){ await navigator.share({text}); return; } }catch(e){ if(e.name==="AbortError") return; }
+  try{ await navigator.clipboard.writeText(text); toast("Copied to clipboard"); }catch(e){ toast("Couldn't share"); }
+}
+
+/* =========================================================
+   Ingredients
+   ========================================================= */
+function renderIngList(){
+  setHeader("Ingredients", `<button class="btn small">+ New</button>`, ()=>go({tab:"ingredients",id:"new"}));
+  const q=query.ingredients.toLowerCase();
+  const list=db.ingredients.filter(x=>x.name.toLowerCase().includes(q)).sort(byName);
+  main.innerHTML=`<input class="search" id="q" placeholder="Search ingredients" value="${esc(query.ingredients)}" autocomplete="off">
+    ${list.length?`<div class="list">${list.map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${esc(x.name)}</div>
+      <div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}</div></div><span class="chev">›</span></button>`).join("")}</div>`
+    : `<div class="empty">${db.ingredients.length?"No matches.":"No ingredients yet. Tap <b>+ New</b> to scan a nutrition label or type one in."}</div>`}`;
+  liveSearch("#q","ingredients",renderIngList);
+  main.querySelectorAll(".item").forEach(b=>b.onclick=()=>go({tab:"ingredients",id:b.dataset.id}));
+}
+function renderIngEdit(){
+  const isNew=route.id==="new";
+  const x=isNew?{id:uid(),name:"",per:zero(),serving:{qty:"100",unit:"g",grams:100}}:ing(route.id);
+  if(!x) return go({tab:"ingredients"});
+  setHeader(isNew?"New ingredient":"Edit ingredient", `<button class="btn ghost">‹ Back</button>`, ()=>go({tab:"ingredients"}));
+  const sv=x.serving, sMass=UNITS[sv.unit].t==="m";
+  const v=k=>isNew?"":+(x.per[k]*sv.grams).toFixed(3);
+  const cupW = x.gPerMl && sMass ? +(x.gPerMl*CUP).toFixed(1) : "";
+  const pcW = x.gPerPiece && sv.unit!=="piece" ? +x.gPerPiece.toFixed(1) : "";
+  const usedIn=isNew?[]:db.recipes.filter(r=>r.items.some(it=>it.kind==="ing"&&it.id===x.id));
+  main.innerHTML=`
+  <div class="scanbox"><div style="display:flex;align-items:center;gap:10px"><div class="grow"><b>Scan a nutrition label</b><div class="sub">Take a photo of the label and the numbers fill in. Check them before saving.</div></div>
+    <button class="btn" id="scan">📷 Scan</button></div><input type="file" id="scanFile" accept="image/*" hidden>
+    <div id="scanStatus" class="hint"></div></div>
+  <div class="card">
+    <label class="f"><span>Name</span><input id="nm" value="${esc(x.name)}" placeholder="e.g. Rolled oats" autocomplete="off"></label>
+    <span class="sub">Nutrition values are for</span>
+    <div class="grid2" style="grid-template-columns:1fr 1.2fr;margin:4px 0 10px">
+      <input id="sq" inputmode="text" value="${esc(sv.qty)}" aria-label="Serving amount">
+      <select id="su" aria-label="Serving unit">${unitOptions([...MASS,...VOL,"piece"], sv.unit)}</select></div>
+    <label class="f" id="sgWrap" ${sMass?"hidden":""}><span id="sgLbl">…which weighs (g)</span><input id="sg" inputmode="decimal" value="${sMass?"":esc(+sv.grams.toFixed(2))}" placeholder="from the label, e.g. 240"></label>
+    <div class="chips" id="quick"><button data-s="100,g">100 g</button><button data-s="1,oz">1 oz</button><button data-s="1,cup">1 cup</button><button data-s="1/4,cup">¼ cup</button><button data-s="1,tbsp">1 tbsp</button><button data-s="1,piece">1 piece</button></div>
+    <div class="grid2">
+      <label class="f"><span>Calories (kcal)</span><input id="kcal" inputmode="decimal" value="${v("kcal")}"></label>
+      <label class="f"><span>Protein (g)</span><input id="protein" inputmode="decimal" value="${v("protein")}"></label>
+      <label class="f"><span>Carbs (g)</span><input id="carbs" inputmode="decimal" value="${v("carbs")}"></label>
+      <label class="f"><span>Fat (g)</span><input id="fat" inputmode="decimal" value="${v("fat")}"></label>
+    </div>
+    <details ${cupW||pcW?"open":""}><summary>Other measurements (so you can use cups or pieces in recipes)</summary>
+      <div class="grid2" style="margin-top:8px">
+        <label class="f" id="cwWrap"><span>1 cup weighs (g)</span><input id="cw" inputmode="decimal" value="${cupW}" placeholder="e.g. 90"></label>
+        <label class="f" id="pwWrap"><span>1 piece weighs (g)</span><input id="pw" inputmode="decimal" value="${pcW}" placeholder="e.g. 50"></label>
+      </div></details>
+    <p class="hint">Saved per gram, so recipes can use any unit. Amounts like 1/4 or 1 1/2 work.</p>
+    <div id="err" class="err"></div>
+    <div class="actions">${isNew?"<span></span>":`<button class="btn danger" id="del">Delete</button>`}<button class="btn" id="save">Save</button></div>
+  </div>
+  ${usedIn.length?`<div class="card"><h3>Used in</h3>${usedIn.map(r=>esc(r.name)).join(", ")}</div>`:""}`;
+  const syncUnit=()=>{ const u=$("#su").value, t=UNITS[u].t;
+    $("#sgWrap").hidden = t==="m"; $("#sgLbl").textContent = t==="v" ? "…which weighs (g). Leave blank for liquids like water or milk." : "…which weighs (g)";
+    $("#cwWrap").hidden = t==="v"; $("#pwWrap").hidden = u==="piece"; };
+  $("#su").onchange=syncUnit; syncUnit();
+  main.querySelectorAll("#quick button").forEach(b=>b.onclick=()=>{ const [q,u]=b.dataset.s.split(","); $("#sq").value=q; $("#su").value=u; syncUnit(); });
+  $("#scan").onclick=()=>$("#scanFile").click();
+  $("#scanFile").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) scanLabel(f); };
+  $("#save").onclick=()=>{
+    const err=m=>{ $("#err").textContent=m; };
+    const name=$("#nm").value.trim(); if(!name) return err("Give it a name.");
+    if(db.ingredients.some(o=>o.id!==x.id&&o.name.toLowerCase()===name.toLowerCase())) return err("An ingredient with that name already exists.");
+    const sq=parseQty($("#sq").value), su=$("#su").value, U=UNITS[su];
+    if(!(sq>0)) return err("Check the serving amount (e.g. 1, 1/4, 100).");
+    let grams;
+    if(U.t==="m") grams=sq*U.f;
+    else { const raw=$("#sg").value.trim(); grams = raw ? parseQty(raw) : (U.t==="v" ? sq*U.f : NaN);
+      if(!(grams>0)) return err(U.t==="p" ? "Enter how many grams one piece weighs." : "Check the weight in grams."); }
+    const per=zero();
+    for(const k of MAC){ const raw=$("#"+k).value.trim(); const n=raw===""?0:parseQty(raw);
+      if(isNaN(n)||n<0) return err(`Check the ${MACNAME[k].toLowerCase()} value.`); per[k]=n/grams; }
+    let gPerMl=null, gPerPiece=null;
+    if(U.t==="v") gPerMl=grams/(sq*U.f); else { const c=parseQty($("#cw").value); if(c>0) gPerMl=c/CUP; }
+    if(su==="piece") gPerPiece=grams/sq; else { const p=parseQty($("#pw").value); if(p>0) gPerPiece=p; }
+    Object.assign(x,{name, per, serving:{qty:$("#sq").value.trim(), unit:su, grams}, gPerMl, gPerPiece});
+    if(isNew) db.ingredients.push(x); save(); toast("Saved"); go({tab:"ingredients"});
+  };
+  if(!isNew) $("#del").onclick=()=>{
+    if(usedIn.length) return $("#err").textContent=`Remove it from ${usedIn.map(r=>r.name).join(", ")} first.`;
+    if(!confirm(`Delete ${x.name}?`)) return;
+    db.ingredients=db.ingredients.filter(o=>o.id!==x.id); save(); go({tab:"ingredients"});
+  };
+}
+
+/* ---------- Label scanning (on-device OCR, works offline) ---------- */
+let ocrWorker=null;
+// The label reader (tesseract.js) is embedded in this file as base64 blocks at the end of <body>,
+// so scanning works offline and even when the .html file is opened directly (no server needed).
+const embedded=id=>{ const el=document.getElementById(id); if(!el) throw new Error("missing "+id);
+  const s=atob(el.textContent.trim()); const a=new Uint8Array(s.length); for(let i=0;i<s.length;i++) a[i]=s.charCodeAt(i); return a; };
+const blobUrl=(id,type)=>URL.createObjectURL(new Blob([embedded(id)],{type}));
+async function getWorker(status){
+  if(ocrWorker) return ocrWorker;
+  status("Starting the label reader…");
+  if(!window.Tesseract){ const s=document.createElement("script"); s.src=blobUrl("ocr-main","text/javascript");
+    await new Promise((res,rej)=>{ s.onload=res; s.onerror=()=>rej(new Error("load")); document.head.appendChild(s); }); }
+  // Core, language data and worker go in one blob. When the page is opened as a file, a worker can't
+  // load anything else, so the worker's fetch of the language file is answered from memory.
+  const prelude=`(()=>{const b64=${JSON.stringify(document.getElementById("ocr-eng").textContent.trim())};
+    const s=atob(b64),a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);
+    const f=self.fetch;self.fetch=(u,...r)=>String(u).endsWith("eng.traineddata.gz")?Promise.resolve(new Response(a)):f(u,...r);})();\n`;
+  const wurl=URL.createObjectURL(new Blob([prelude, embedded("ocr-core"), "\n;\n", embedded("ocr-worker")],{type:"text/javascript"}));
+  const start=Tesseract.createWorker("eng", 1, {workerPath:wurl, workerBlobURL:false, langPath:"https://local.invalid/lang", gzip:true, cacheMethod:"none",
+    logger:m=>{ if(m.status==="recognizing text") status(`Reading label… ${Math.round(m.progress*100)}%`); }});
+  ocrWorker=await Promise.race([start, new Promise((_,rej)=>setTimeout(()=>rej(new Error("timed out")),90000))]);
+  return ocrWorker;
+}
+async function prepImage(file){
+  const img = await createImageBitmap(file, {imageOrientation:"from-image"}).catch(async()=>{
+    const u=URL.createObjectURL(file); const i=new Image(); i.src=u; await i.decode(); return i; });
+  const w=img.width, h=img.height, scale=Math.min(2.5, 2200/Math.max(w,h));
+  const c=document.createElement("canvas"); c.width=Math.round(w*scale); c.height=Math.round(h*scale);
+  const g=c.getContext("2d"); g.drawImage(img,0,0,c.width,c.height);
+  const d=g.getImageData(0,0,c.width,c.height), p=d.data;
+  for(let i=0;i<p.length;i+=4){ const y=0.299*p[i]+0.587*p[i+1]+0.114*p[i+2]; const v=Math.max(0,Math.min(255,(y-128)*1.5+128)); p[i]=p[i+1]=p[i+2]=v; }
+  g.putImageData(d,0,0); return c;
+}
+async function scanLabel(file){
+  const st=$("#scanStatus"); const status=t=>{ st.textContent=t; };
+  const btn=$("#scan"); btn.disabled=true;
+  try{
+    let img;
+    try{ img=await prepImage(file); }
+    catch(e){ status("This browser can't open that picture format. iPhone photos are often HEIC: on a computer, use Safari or save the photo as JPEG or PNG first."); return; }
+    let w;
+    try{ w=await getWorker(status); }
+    catch(e){ console.error(e); ocrWorker=null; status("The label reader couldn't start in this browser ("+(e&&e.message||e)+")."); return; }
+    status("Reading label…");
+    const {data}=await w.recognize(img);
+    const r=parseLabel(data.text);
+    const filled=[];
+    if(r.servingQty){ $("#sq").value=r.servingQty; $("#su").value=r.servingUnit; $("#su").onchange(); filled.push("serving size"); }
+    if(r.servingGrams && UNITS[r.servingUnit||"g"].t!=="m"){ $("#sg").value=r.servingGrams; }
+    for(const k of MAC) if(r[k]!=null){ $("#"+k).value=r[k]; filled.push(MACNAME[k].toLowerCase()); }
+    st.innerHTML = (filled.length ? `Filled in ${filled.join(", ")}. <b>Please check them against the label.</b>`
+      : `Couldn't find the numbers. Try a sharper, straight-on photo of just the Nutrition Facts panel.`)
+      + `<details><summary>What the scanner read</summary><pre class="ocr">${esc(data.text)}</pre></details>`;
+  }catch(e){ console.error(e); status("Something went wrong reading the label ("+(e&&e.message||e)+"). Please try again."); }
+  finally{ btn.disabled=false; }
+}
+// Pulls serving size, calories and macros out of OCR text (US "Nutrition Facts" and EU "per 100 g" labels).
+function parseLabel(raw){
+  let t=raw.replace(/\r/g,"")
+    .replace(/(\d)\s*[oO](?=\s*(m?g)\b)/g,"$10")          // "1Og" -> "10g"
+    .replace(/\b[oO](?=\s*m?g\b)/g,"0")                  // "Og" -> "0g"
+    .replace(/[|]/g,"l");
+  const num=s=>s==null?null:+String(s).replace(",",".");
+  const out={};
+  const find=(res)=>{ for(const re of res){ const m=t.match(re); if(m) return m; } return null; };
+  // Serving size, e.g. "Serving size 2/3 cup (55g)", "Serving Size 1 bar (40g)", "Serving size 30g"
+  const sm=t.match(/serving\s*size[^\n\d]*([\d\s\/.,½¼¾⅓⅔]+)\s*([a-zA-Z.]+(?:\s?oz)?)?[^\n(]*\(?\s*(?:about\s*)?(\d+(?:[.,]\d+)?)?\s*(g|ml)?/i);
+  if(sm){
+    const q=sm[1].trim(), word=(sm[2]||"").toLowerCase().replace(/\.$/,"");
+    let unit=null;
+    if(/^cups?$/.test(word)) unit="cup"; else if(/^(tbsp|tablespoons?)$/.test(word)) unit="tbsp"; else if(/^(tsp|teaspoons?)$/.test(word)) unit="tsp";
+    else if(/^fl\.? ?oz$/.test(word)) unit="floz"; else if(word==="oz") unit="oz"; else if(word==="ml") unit="ml"; else if(/^(g|grams?)$/.test(word)) unit="g";
+    else if(word) unit="piece";
+    let grams=num(sm[3]); if(sm[3] && !sm[4] && /\d9$/.test(sm[3])) grams=num(sm[3].slice(0,-1));
+    if(unit==="g"||(unit==="ml"&&!grams)){ out.servingQty=q; out.servingUnit=unit; }
+    else if(unit && !isNaN(parseQty(q))){ out.servingQty=q; out.servingUnit=unit; if(grams) out.servingGrams=grams; }
+    else if(grams){ out.servingQty=String(grams); out.servingUnit=sm[4]==="ml"?"ml":"g"; }
+  }
+  if(!out.servingQty && /per\s*100\s*g/i.test(t)){ out.servingQty="100"; out.servingUnit="g"; }
+  // OCR often reads the unit "g" as "9" ("37g" -> "379"). A grams value with no unit that ends in 9 is treated that way.
+  const G="(\\d+(?:[.,]\\d+)?)\\s*(g|9|q)?(?![\\d.,])";
+  const gram=m=>{ if(!m) return null; let v=m[1]; if(m[2]==="9"||m[2]==="q"||(!m[2] && /\d9$/.test(v))) v = m[2] ? v : v.slice(0,-1); return num(v); };
+  const rx=(pre)=>new RegExp(pre+"[^\\d\\n]{0,8}"+G,"i");
+  let m=find([/calories(?!\s*from)[^\d\n]{0,25}(\d{1,4})/i, /energy[^\n]*?(\d{1,4})\s*kcal/i, /(\d{1,4})\s*kcal/i]); if(m) out.kcal=num(m[1]);
+  m=find([rx("total\\s*fat"), rx("\\bfat")]); if(m) out.fat=gram(m);
+  m=find([rx("total\\s*carb[a-z.]*"), rx("carbohydrates?"), rx("carb[a-z.]*")]); if(m) out.carbs=gram(m);
+  m=find([rx("protein")]); if(m) out.protein=gram(m);
+  return out;
+}
+
+/* =========================================================
+   Recipes
+   ========================================================= */
+function renderRecList(){
+  setHeader("Recipes", `<button class="btn small">+ New</button>`, ()=>{
+    const r={id:uid(),name:"New recipe",servings:1,finalWeight:"",items:[]};
+    db.recipes.push(r); save(); go({tab:"recipes",id:r.id,fresh:true}); });
+  const q=query.recipes.toLowerCase();
+  const list=db.recipes.filter(x=>x.name.toLowerCase().includes(q)).sort(byName);
+  main.innerHTML=`<input class="search" id="q" placeholder="Search recipes" value="${esc(query.recipes)}" autocomplete="off">
+    ${list.length?`<div class="list">${list.map(r=>{ const t=totals(r.id), s=Number(r.servings)||1;
+      return `<button class="item" data-id="${r.id}"><div class="grow"><div class="name">${esc(r.name)}</div>
+      <div class="sub">${s!==1?`per serving (makes ${fmt(s,2)}): `:"whole recipe: "}${short(add(zero(),t.total,1/s))}</div></div><span class="chev">›</span></button>`; }).join("")}</div>`
+    : `<div class="empty">${db.recipes.length?"No matches.":"No recipes yet. Add a few ingredients first, then tap <b>+ New</b>."}</div>`}`;
+  liveSearch("#q","recipes",renderRecList);
+  main.querySelectorAll(".item").forEach(b=>b.onclick=()=>go({tab:"recipes",id:b.dataset.id}));
+}
+function renderRecipe(){
+  const r=rec(route.id); if(!r) return go({tab:"recipes"});
+  setHeader("Recipe", `<button class="btn ghost">‹ Done</button>`, ()=>go({tab:"recipes"}));
+  const t=totals(r.id);
+  const usedBy=db.recipes.filter(o=>o.id!==r.id&&o.items.some(it=>it.kind==="rec"&&it.id===r.id));
+  const views={serving:"Per serving",total:"Whole recipe",g100:"Per 100 g"};
+  if(!views[pref.view]) pref.view="serving";
+  main.innerHTML=`
+  <div class="card">
+    <label class="f"><span>Recipe name</span><input id="nm" value="${esc(r.name)}" autocomplete="off"></label>
+    <div class="grid2">
+      <label class="f"><span>Servings it makes</span><input id="sv" inputmode="decimal" value="${esc(r.servings)}"></label>
+      <label class="f"><span>Cooked weight (g, optional)</span><input id="fw" inputmode="decimal" value="${esc(r.finalWeight)}" placeholder="${fmt(t.rawWeight||0)}"></label>
+    </div>
+    <p class="hint" style="margin-top:-6px">Cooked weight accounts for water lost in cooking. Leave blank to use the sum of the ingredients.</p>
+  </div>
+  <div class="card" id="sum">
+    <div class="seg" id="vw">${Object.entries(views).map(([k,l])=>`<button data-v="${k}" class="${k===pref.view?"on":""}">${l}</button>`).join("")}</div>
+    <div id="mb"></div><p class="hint" id="wt"></p><p class="warn" id="bad"></p>
+    <div class="actions"><span></span><button class="btn soft small" id="plan">+ Add to meal plan</button></div>
+  </div>
+  <div class="card"><h3>Ingredients &amp; sub-recipes</h3>
+    <div id="items">${r.items.length?r.items.map(itemRow).join(""):`<div class="empty" style="padding:16px">Nothing added yet.</div>`}</div>
+    <div class="actions"><span class="hint" style="margin:0">Amounts like ¼ or 1 1/2 work.</span><button class="btn" id="addItem">+ Add item</button></div>
+  </div>
+  ${usedBy.length?`<div class="card"><h3>Used as a sub-recipe in</h3>${usedBy.map(o=>esc(o.name)).join(", ")}</div>`:""}
+  <div class="actions"><button class="btn ghost" id="dup">Duplicate</button><button class="btn danger" id="del">Delete recipe</button></div>
+  <div id="err" class="err"></div>`;
+  refreshSummary();
+  const nm=$("#nm"); nm.oninput=()=>{ r.name=nm.value; save(); };
+  nm.onblur=()=>{ if(!r.name.trim()){ r.name="Untitled recipe"; nm.value=r.name; save(); } };
+  if(route.fresh){ route.fresh=false; nm.select(); }
+  $("#sv").oninput=e=>{ const n=parseQty(e.target.value); r.servings=n>0?n:1; save(); refreshSummary(); };
+  $("#fw").oninput=e=>{ const v=e.target.value.trim(), n=parseQty(v); r.finalWeight= v===""||!(n>0)?"":n; save(); refreshSummary(); };
+  main.querySelectorAll("#vw button").forEach(b=>b.onclick=()=>{ pref.view=b.dataset.v; savePref(); refreshSummary(); });
+  main.querySelectorAll("#items .line").forEach(l=>{
+    const it=r.items[+l.dataset.i];
+    l.querySelector(".qty").oninput=e=>{ it.qty=e.target.value.trim(); save(); refreshSummary(); };
+    l.querySelector(".unit").onchange=e=>{ it.unit=e.target.value; save(); refreshSummary(); };
+    l.querySelector(".rm").onclick=()=>{ r.items.splice(+l.dataset.i,1); save(); renderRecipe(); };
+  });
+  $("#addItem").onclick=()=>openPicker(r);
+  $("#plan").onclick=()=>openPlanDialog(r.id);
+  $("#dup").onclick=()=>{ const c=JSON.parse(JSON.stringify(r)); c.id=uid(); c.name=r.name+" (copy)"; db.recipes.push(c); save(); toast("Duplicated"); go({tab:"recipes",id:c.id}); };
+  $("#del").onclick=()=>{
+    if(usedBy.length) return $("#err").textContent=`It's a sub-recipe in ${usedBy.map(o=>o.name).join(", ")}. Remove it there first.`;
+    const planned=db.plan.entries.some(e=>e.recipeId===r.id);
+    if(!confirm(`Delete ${r.name}?${planned?" It will also be removed from your meal plan.":""}`)) return;
+    db.recipes=db.recipes.filter(o=>o.id!==r.id); db.plan.entries=db.plan.entries.filter(e=>e.recipeId!==r.id); save(); go({tab:"recipes"});
+  };
+}
+function refreshSummary(){
+  const r=rec(route.id), t=totals(r.id), s=Number(r.servings)||1;
+  const scale= pref.view==="total"?1 : pref.view==="g100"?(t.weight?100/t.weight:0) : 1/s;
+  $("#mb").innerHTML=macroBlock(t.total, scale);
+  $("#wt").textContent=`Total weight ${fmt(t.weight)} g${s!==1?` · one serving ≈ ${fmt(t.weight/s)} g`:""}`;
+  $("#bad").textContent= t.bad==="unit" ? "An item uses a unit its ingredient can't convert (add a cup or piece weight to that ingredient)." : t.bad ? "Some items point to something that was deleted." : "";
+  main.querySelectorAll("#vw button").forEach(b=>b.classList.toggle("on", b.dataset.v===pref.view));
+  main.querySelectorAll("#items .line").forEach(l=>{ const i=itemInfo(r.items[+l.dataset.i]);
+    l.querySelector(".sub").textContent= i.bad==="unit" ? "Can't convert this unit for this ingredient" : `${short(i.m)}${i.grams?` · ${fmt(i.grams)} g`:""}`; });
+  $("#fw").placeholder=fmt(t.rawWeight||0);
+}
+function itemRow(it,i){
+  const isRec=it.kind==="rec", obj=isRec?rec(it.id):ing(it.id);
+  const name=obj?esc(obj.name):"<i>(deleted)</i>";
+  let list = isRec ? ["serving","batch","g","oz","lb"] : unitsFor(obj);
+  if(!list.includes(it.unit)) list=[it.unit, ...list];
+  return `<div class="line" data-i="${i}"><div class="grow"><div>${name}${isRec?`<span class="tag">recipe</span>`:""}</div>
+    <div class="sub"></div></div>
+    <input class="qty" inputmode="text" value="${esc(it.qty)}" aria-label="Quantity">
+    <select class="unit" aria-label="Unit">${unitOptions(list, it.unit)}</select>
+    <button class="btn danger small rm" aria-label="Remove">✕</button></div>`;
+}
+
+/* ---------- Picker ---------- */
+let pick={kind:"ing",recipe:null};
+function openPicker(r){ pick.recipe=r; $("#pickSearch").value=""; drawPicker(); $("#picker").showModal(); }
+function drawPicker(){
+  const r=pick.recipe, q=$("#pickSearch").value.toLowerCase();
+  document.querySelectorAll("#pickSeg button").forEach(b=>b.classList.toggle("on", b.dataset.k===pick.kind));
+  let rows;
+  if(pick.kind==="ing"){
+    rows=db.ingredients.filter(x=>x.name.toLowerCase().includes(q)).sort(byName)
+      .map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${esc(x.name)}</div><div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}</div></div><span>＋</span></button>`);
+    if(!db.ingredients.length) rows=[`<div class="empty">No ingredients yet. Add some in the Ingredients tab.</div>`];
+  } else {
+    rows=db.recipes.filter(x=>x.id!==r.id&&x.name.toLowerCase().includes(q)).sort(byName).map(x=>{ const ok=canNest(r.id,x.id);
+      return `<button class="item" data-id="${x.id}" ${ok?"":"disabled style='opacity:.45'"}><div class="grow"><div class="name">${esc(x.name)}</div>
+        <div class="sub">${ok?"whole recipe: "+short(totals(x.id).total):"Can't add: it already uses "+esc(r.name)}</div></div><span>${ok?"＋":""}</span></button>`; });
+    if(!rows.length) rows=[`<div class="empty">No other recipes yet.</div>`];
+  }
+  $("#pickList").innerHTML=rows.join("");
+  $("#pickList").querySelectorAll("button.item:not([disabled])").forEach(b=>b.onclick=()=>{
+    if(pick.kind==="rec"&&!canNest(r.id,b.dataset.id)) return;
+    if(pick.kind==="ing"){ const x=ing(b.dataset.id); const su=x.serving.unit;
+      r.items.push({kind:"ing", id:x.id, qty: UNITS[su].t==="m" ? "100" : "1", unit: UNITS[su].t==="m" ? "g" : su}); }
+    else r.items.push({kind:"rec", id:b.dataset.id, qty:"1", unit:"serving"});
+    save(); $("#picker").close(); renderRecipe();
+    const inputs=main.querySelectorAll("input.qty"); const last=inputs[inputs.length-1]; if(last){ last.focus(); last.select(); }
+  });
+}
+$("#pickSearch").oninput=drawPicker;
+document.querySelectorAll("#pickSeg button").forEach(b=>b.onclick=()=>{ pick.kind=b.dataset.k; drawPicker(); });
+
+/* =========================================================
+   Backup
+   ========================================================= */
+function renderSettings(){
+  setHeader("Backup");
+  main.innerHTML=`<div class="card"><h3>Your data</h3>
+    <p>${db.ingredients.length} ingredients · ${db.recipes.length} recipes · ${db.plan.entries.length} planned meals. Everything is stored only on this phone.</p>
+    <div class="actions" style="justify-content:flex-start">
+      <button class="btn" id="exp">Export backup</button><button class="btn ghost" id="imp">Import backup</button>
+      <input type="file" id="file" accept="application/json,.json" hidden></div>
+    <p class="hint">Export now and then and save the file to iCloud Drive or Files, so nothing is lost if you change phones. Importing replaces what is on this phone.</p>
+    <div id="err" class="err"></div></div>
+    <div class="card"><h3>Install on iPhone</h3>
+    <p>In Safari, tap the Share button, then <b>Add to Home Screen</b>. It then opens full screen like a normal app and works offline.</p></div>`;
+  $("#exp").onclick=async()=>{
+    const txt=JSON.stringify({app:"macro-kitchen",version:2,exported:new Date().toISOString(),...db},null,1);
+    const name=`macros-backup-${new Date().toISOString().slice(0,10)}.json`;
+    const file=new File([txt],name,{type:"application/json"});
+    try{ if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:name}); return; } }catch(e){ if(e.name==="AbortError") return; }
+    const a=document.createElement("a"); a.href=URL.createObjectURL(file); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  };
+  $("#imp").onclick=()=>$("#file").click();
+  $("#file").onchange=async e=>{
+    const f=e.target.files[0]; if(!f) return;
+    try{ const d=JSON.parse(await f.text());
+      if(!Array.isArray(d.ingredients)||!Array.isArray(d.recipes)) throw new Error("bad");
+      if(!confirm(`Replace current data with ${d.ingredients.length} ingredients and ${d.recipes.length} recipes?`)) return;
+      db=migrate({ingredients:d.ingredients,recipes:d.recipes,plan:d.plan}); save(); toast("Imported"); renderSettings();
+    }catch(err){ $("#err").textContent="That file isn't a valid backup."; }
+  };
+}
+
+render();
+if("serviceWorker" in navigator && window.isSecureContext && location.protocol!=="file:") navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+<!--OCR_PAYLOAD-->
+</body>
+</html>
