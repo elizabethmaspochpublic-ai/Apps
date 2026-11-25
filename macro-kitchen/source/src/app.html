@@ -516,6 +516,16 @@ function openConverter(){
 /* =========================================================
    Grocery list
    ========================================================= */
+/* ---------- Costs (optional price per package on each ingredient) ---------- */
+const money=n=>"$"+(Math.round(n*100)/100).toFixed(2);
+function costPerGram(x){ if(!x||!x.price) return null; const g=gramsPerUnit(x,x.price.unit); const q=parseQty(x.price.qty);
+  return g&&q>0 ? x.price.amount/(q*g) : null; }
+// Cost of ingredient grams map -> {total, priced, missing:[names]}
+function costOf(acc){ let total=0, priced=0; const missing=[];
+  for(const [id,g] of Object.entries(acc)){ if(id[0]==="_"||!(g>0)) continue; const x=ing(id); if(!x) continue; const c=costPerGram(x);
+    if(c==null) missing.push(ingLabel(x)); else { total+=c*g; priced++; } }
+  return {total, priced, missing}; }
+const priceText=x=>x.price?`${money(x.price.amount)} / ${x.price.qty} ${unitLabel(x.price.unit, parseQty(x.price.qty))}`:"";
 function bestAmount(x, grams){
   const parts=[`${fmt(grams)} g`];
   const su=x.serving?.unit;
@@ -544,12 +554,15 @@ function renderGrocery(){
   const xNeed=P.extra.filter(e=>!e.have), xHave=P.extra.filter(e=>e.have);
   const recipes=[...new Set(P.entries.filter(e=>!isSnack(e)).map(e=>e.recipeId))].map(rec).filter(Boolean);
   if(P.entries.some(isSnack)) recipes.push({name:"snacks"});
+  const needCost=costOf(Object.fromEntries(need.map(o=>[o.x.id,o.g]))), allCost=costOf(Object.fromEntries(items.map(o=>[o.x.id,o.g])));
+  const costLine = allCost.priced ? `<div class="card" style="display:flex;align-items:center;gap:10px"><div class="grow"><b>Estimated cost</b><div class="sub">${needCost.missing.length?`${needCost.missing.length} item${needCost.missing.length===1?"":"s"} without a price. `:""}Based on the amount used, not whole packages.</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700">${money(needCost.total)}</div><div class="sub">to buy · week ${money(allCost.total)}</div></div></div>` : "";
   const row=o=>`<label class="gitem ${P.have[o.x.id]?"have":""}"><input type="checkbox" data-i="${o.x.id}" ${P.have[o.x.id]?"checked":""}>
-     <div class="grow"><div class="name">${ingHtml(o.x)}</div><div class="sub">${bestAmount(o.x,o.g)}</div></div></label>`;
+     <div class="grow"><div class="name">${ingHtml(o.x)}</div><div class="sub">${bestAmount(o.x,o.g)}</div></div>${costPerGram(o.x)!=null?`<span class="sub nowrap">≈ ${money(costPerGram(o.x)*o.g)}</span>`:""}</label>`;
   const xrow=e=>`<label class="gitem ${e.have?"have":""}"><input type="checkbox" data-x="${e.id}" ${e.have?"checked":""}>
      <div class="grow name">${esc(e.text)}</div><button class="btn danger small" data-xd="${e.id}" aria-label="Remove">✕</button></label>`;
   main.innerHTML=`
     ${recipes.length?`<p class="sub" style="margin:0 0 10px">From this week's plan: ${recipes.map(r=>esc(r.name)).join(", ")}</p>`:""}
+    ${costLine}
     ${bad?`<p class="warn">Some recipe items use a unit the ingredient can't convert, so they're left out.</p>`:""}
     <div class="card"><h3><span class="grow">To buy (${need.length+xNeed.length})</span></h3>
       ${need.length||xNeed.length ? need.map(row).join("")+xNeed.map(xrow).join("") : `<div class="empty" style="padding:14px">${items.length?"You have everything. 🎉":"Plan some meals on the Home tab and the ingredients show up here."}</div>`}
@@ -565,7 +578,7 @@ function renderGrocery(){
 }
 async function shareGrocery(){
   const {items}=groceryData(); const P=db.plan;
-  const lines=[...items.filter(o=>!P.have[o.x.id]).map(o=>`• ${ingLabel(o.x)}: ${bestAmount(o.x,o.g)}`), ...P.extra.filter(e=>!e.have).map(e=>`• ${e.text}`)];
+  const lines=[...items.filter(o=>!P.have[o.x.id]).map(o=>`• ${ingLabel(o.x)}: ${bestAmount(o.x,o.g)}${costPerGram(o.x)!=null?` (≈ ${money(costPerGram(o.x)*o.g)})`:""}`), ...P.extra.filter(e=>!e.have).map(e=>`• ${e.text}`)];
   if(!lines.length) return toast("Nothing to buy");
   const text="Grocery list\n"+lines.join("\n");
   try{ if(navigator.share){ await navigator.share({text}); return; } }catch(e){ if(e.name==="AbortError") return; }
@@ -581,7 +594,7 @@ function renderIngList(){
   const list=db.ingredients.filter(x=>ingMatch(x,q)).sort(byName);
   main.innerHTML=`<input class="search" id="q" placeholder="Search ingredients" value="${esc(query.ingredients)}" autocomplete="off">
     ${list.length?`<div class="list">${list.map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${ingHtml(x)}</div>
-      <div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}</div></div><span class="chev">›</span></button>`).join("")}</div>`
+      <div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}${x.price?` · ${esc(priceText(x))}`:""}</div></div><span class="chev">›</span></button>`).join("")}</div>`
     : `<div class="empty">${db.ingredients.length?"No matches.":"No ingredients yet. Tap <b>+ New</b> to scan a nutrition label or type one in."}</div>`}`;
   liveSearch("#q","ingredients",renderIngList);
   main.querySelectorAll(".item").forEach(b=>b.onclick=()=>go({tab:"ingredients",id:b.dataset.id}));
@@ -620,6 +633,11 @@ function renderIngEdit(){
         <label class="f" id="cwWrap"><span>1 cup weighs (g)</span><input id="cw" inputmode="decimal" value="${cupW}" placeholder="e.g. 90"></label>
         <label class="f" id="pwWrap"><span>1 piece weighs (g)</span><input id="pw" inputmode="decimal" value="${pcW}" placeholder="e.g. 50"></label>
       </div></details>
+    <details ${x.price?"open":""}><summary>Price (optional, for recipe and grocery costs)</summary>
+      <div class="grid3" style="margin-top:8px"><label class="f"><span>Price ($)</span><input id="pa" inputmode="decimal" value="${x.price?esc(x.price.amount):""}" placeholder="3.99"></label>
+        <label class="f"><span>for amount</span><input id="pq2" inputmode="text" value="${x.price?esc(x.price.qty):""}" placeholder="16"></label>
+        <label class="f"><span>unit</span><select id="pu2">${unitOptions([...MASS,...VOL,"piece"], x.price?x.price.unit:"oz")}</select></label></div>
+      <p class="hint" style="margin-top:-6px">Use the package size from the shelf tag, e.g. $3.99 for 16 oz, or $4.50 for 12 pieces.</p></details>
     <p class="hint">Saved per gram, so recipes can use any unit. Amounts like 1/4 or 1 1/2 work.</p>
     <div id="err" class="err"></div>
     <div class="actions">${isNew?"<span></span>":`<button class="btn danger" id="del">Delete</button>`}<button class="btn" id="save">Save</button></div>
@@ -650,7 +668,14 @@ function renderIngEdit(){
     let gPerMl=null, gPerPiece=null;
     if(U.t==="v") gPerMl=grams/(sq*U.f); else { const c=parseQty($("#cw").value); if(c>0) gPerMl=c/CUP; }
     if(su==="piece") gPerPiece=grams/sq; else { const p=parseQty($("#pw").value); if(p>0) gPerPiece=p; }
-    Object.assign(x,{name, brand: brand||undefined, per, serving:{qty:$("#sq").value.trim(), unit:su, grams}, gPerMl, gPerPiece});
+    let price;
+    const pa=$("#pa").value.trim();
+    if(pa){ const amt=parseQty(pa.replace("$","")), pq=$("#pq2").value.trim(), pu=$("#pu2").value;
+      if(!(amt>=0)) return err("Check the price.");
+      if(!(parseQty(pq)>0)) return err("Enter the package amount for the price, e.g. 16 oz.");
+      if(gramsPerUnit({gPerMl,gPerPiece}, pu)==null) return err(UNITS[pu].t==="v" ? "To price by volume, add a cup weight under Other measurements." : "To price per piece, add a piece weight under Other measurements.");
+      price={amount:amt, qty:pq, unit:pu}; }
+    Object.assign(x,{name, brand: brand||undefined, per, serving:{qty:$("#sq").value.trim(), unit:su, grams}, gPerMl, gPerPiece, price});
     if(isNew) db.ingredients.push(x); save(); toast("Saved"); go({tab:"ingredients"});
   };
   if(!isNew) $("#snack").onclick=()=>openPlanDialog(null,"ing",x.id);
@@ -786,7 +811,7 @@ function renderRecipe(){
   </div>
   <div class="card" id="sum">
     <div class="seg" id="vw">${Object.entries(views).map(([k,l])=>`<button data-v="${k}" class="${k===pref.view?"on":""}">${l}</button>`).join("")}</div>
-    <div id="mb"></div><p class="hint" id="wt"></p><p class="warn" id="bad"></p>
+    <div id="mb"></div><p class="hint" id="wt"></p><p class="hint" id="cost"></p><p class="warn" id="bad"></p>
     <div class="actions"><span></span><button class="btn soft small" id="plan">+ Add to meal plan</button></div>
   </div>
   <div class="card"><h3>Ingredients &amp; sub-recipes</h3>
@@ -823,6 +848,8 @@ function refreshSummary(){
   const r=rec(route.id), t=totals(r.id), s=Number(r.servings)||1;
   const scale= pref.view==="total"?1 : pref.view==="g100"?(t.weight?100/t.weight:0) : 1/s;
   $("#mb").innerHTML=macroBlock(t.total, scale);
+  { const c=costOf(flatten(r.id,1,{}));
+    $("#cost").textContent = c.priced ? `Cost ${money(c.total)} for the recipe${s!==1?` · ${money(c.total/s)} per serving`:""}${c.missing.length?` (not priced: ${c.missing.join(", ")})`:""}` : ""; }
   $("#wt").textContent=`Total weight ${fmt(t.weight)} g${s!==1?` · one serving ≈ ${fmt(t.weight/s)} g`:""}`;
   $("#bad").textContent= t.bad==="unit" ? "An item uses a unit its ingredient can't convert (add a cup or piece weight to that ingredient)." : t.bad ? "Some items point to something that was deleted." : "";
   main.querySelectorAll("#vw button").forEach(b=>b.classList.toggle("on", b.dataset.v===pref.view));
