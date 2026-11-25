@@ -254,10 +254,16 @@ function migrate(d){
   d.plan.goals = Object.assign({kcal:2000,protein:120,carbs:225,fat:65}, d.plan.goals||{});
   d.plan.entries = d.plan.entries||[]; d.plan.have=d.plan.have||{}; d.plan.extra=d.plan.extra||[]; d.plan.saved=d.plan.saved||[]; d.plan.recent=d.plan.recent||[];
   d.body=Object.assign({unit:"lb", weights:[], checkinDay:null, progress:[]}, d.body||{});
-  d.log=d.log||{};
+  d.log=d.log||{}; for(const v of Object.values(d.log)) if(v.ex===true) v.ex=2;
   return d;
 }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(db)); localStorage.setItem(KEY+"-changed", Date.now()); }catch(e){ toast("Could not save on this device"); } }
+// Each day, the planned meals for today's weekday are recorded under today's date, so charts have real dated history.
+function snapToday(){ if(typeof todayIdx!=="function"||!db.log) return; const d=isoDay(), m=zero();
+  db.plan.entries.filter(e=>e.day===todayIdx()).forEach(e=>add(m,entryMacros(e)));
+  const e=db.log[d]||{};
+  if(m.kcal>0) e.m={kcal:Math.round(m.kcal),protein:Math.round(m.protein),carbs:Math.round(m.carbs),fat:Math.round(m.fat)}; else delete e.m;
+  if(Object.keys(e).length) db.log[d]=e; else delete db.log[d]; }
+function save(){ try{ snapToday(); localStorage.setItem(KEY, JSON.stringify(db)); localStorage.setItem(KEY+"-changed", Date.now()); }catch(e){ toast("Could not save on this device"); } }
 /* ---------- Backups: data lives in this home-screen app; deleting the icon deletes it, so keep a file copy ---------- */
 const getNum=k=>{ try{ return +localStorage.getItem(KEY+k)||0; }catch(e){ return 0; } };
 const hasData=()=>db.ingredients.length+db.recipes.length>0;
@@ -615,20 +621,25 @@ const isoDay=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).padSta
 const parseISO=s=>{ const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); };
 const niceDate=s=>parseISO(s).toLocaleDateString(undefined,{month:"short",day:"numeric"});
 function weekDates(){ const t=new Date(); const mon=new Date(t.getFullYear(),t.getMonth(),t.getDate()-todayIdx()); return DAYS.map((_,i)=>isoDay(new Date(mon.getFullYear(),mon.getMonth(),mon.getDate()+i))); }
-const exercised=d=>!!(db.log[d]&&db.log[d].ex);
-function setExercised(d,v){ const e=db.log[d]||{}; if(v) e.ex=true; else delete e.ex; if(Object.keys(e).length) db.log[d]=e; else delete db.log[d]; save(); }
+// Exercise intensity per date: 0 none, 1 warmup, 2 moderate, 3 intense, 4 beast mode (old "checked" days count as moderate)
+const EX=["None","Warmup","Moderate","Intense","Beast mode"];
+const exLevel=d=>{ const v=db.log[d]&&db.log[d].ex; return v===true?2:(+v||0); };
+const exercised=d=>exLevel(d)>0;
+function setEx(d,lvl){ const e=db.log[d]||{}; if(lvl>0) e.ex=lvl; else delete e.ex; if(Object.keys(e).length) db.log[d]=e; else delete db.log[d]; save(); }
+const exFill=l=>l?`color-mix(in srgb, var(--accent) ${[0,30,55,80,100][l]}%, var(--card))`:"transparent";
 const isCheckinDay=()=>db.body.checkinDay!=null && db.body.checkinDay===todayIdx();
 const weighedToday=()=>db.body.weights.some(w=>w.d===isoDay());
 function todayCard(){
   const today=isoDay(); const ci=isCheckinDay();
   return `<div class="card">
-    <label class="exrow"><input type="checkbox" id="exToday" ${exercised(today)?"checked":""}> Exercised today <span class="sub" style="font-weight:400;margin-left:auto">${weekDates().filter(exercised).length}/7 this week</span></label>
+    <div class="exrow"><span>Exercise today</span><select id="exToday" style="width:auto;margin-left:auto">${EX.map((n,i)=>`<option value="${i}" ${exLevel(today)===i?"selected":""}>${n}</option>`).join("")}</select></div>
+    <p class="hint" style="margin:6px 0 0">${weekDates().filter(exercised).length} of 7 days this week.</p>
     ${ci?`<div class="scanbox" style="margin:12px 0 0"><b>📅 It's check-in day</b><div class="sub" style="margin:2px 0 8px">${weighedToday()?"Weight logged ✓. ":"Weigh in and "}take your progress photos.</div>
       <div class="actions" style="justify-content:flex-start;margin:0">${weighedToday()?"":`<button class="btn small" id="ciW">⚖️ Log weight</button>`}<button class="btn small soft" id="ciP">📸 Progress photos</button></div></div>`:""}
   </div>`;
 }
 function bindTodayCard(rerender){
-  const cb=$("#exToday"); if(cb) cb.onchange=()=>{ setExercised(isoDay(), cb.checked); rerender(); };
+  const cb=$("#exToday"); if(cb) cb.onchange=()=>{ setEx(isoDay(), +cb.value); rerender(); };
   const w=$("#ciW"); if(w) w.onclick=()=>openWeightDialog(rerender);
   const p=$("#ciP"); if(p) p.onclick=()=>addProgressPhotos(rerender);
 }
@@ -689,16 +700,51 @@ function weightChart(){
   return {html:`<div class="chart" id="wtc">${svg}<div class="tip" id="wtTip">${ch===0?"No change":`${ch>0?"+":""}${fmt(ch,1)} ${u}`} since ${niceDate(ws[0].d)}. Tap a point for details.</div></div>`,
     bind:()=>main.querySelectorAll("#wtc [data-pt]").forEach(c=>c.onclick=()=>{ const w=ws[+c.dataset.pt]; $("#wtTip").textContent=`${parseISO(w.d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}: ${fmt(w.w,1)} ${u}`; })};
 }
+// Weight, calories and exercise on one shared timeline: three stacked panels, same dates, each with its own scale.
+function trendsChart(n){
+  const end=new Date(), dates=[]; for(let i=n-1;i>=0;i--) dates.push(isoDay(new Date(end.getFullYear(),end.getMonth(),end.getDate()-i)));
+  const wmap=Object.fromEntries(db.body.weights.map(w=>[w.d,w.w])), u=db.body.unit, goal=Number(db.plan.goals.kcal)||0;
+  const W=340,L=38,R=8, cw=(W-L-R)/n, xc=i=>L+cw*i+cw/2;
+  const ws=dates.map((d,i)=>[i,wmap[d]]).filter(a=>a[1]!=null), kc=dates.map(d=>db.log[d]&&db.log[d].m?db.log[d].m.kcal:null);
+  // panel 1: weight
+  let H1=110, svg=`<svg viewBox="0 0 ${W} ${H1+70+34+24}" role="img" aria-label="Weight, planned calories and exercise intensity over the last ${n} days">`;
+  if(ws.length){ const lo=Math.min(...ws.map(a=>a[1])), hi=Math.max(...ws.map(a=>a[1])), pad=Math.max((hi-lo)*.2,1), mn=lo-pad, mx=hi+pad, y=v=>14+(H1-24)*(1-(v-mn)/(mx-mn));
+    [lo,hi].forEach(t=>svg+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(t)+4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmt(t,1)}</text>`);
+    if(ws.length>1) svg+=`<polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" points="${ws.map(a=>`${xc(a[0]).toFixed(1)},${y(a[1]).toFixed(1)}`).join(" ")}"/>`;
+    ws.forEach(a=>svg+=`<circle cx="${xc(a[0])}" cy="${y(a[1])}" r="4" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>`);
+  } else svg+=`<text x="${(L+W)/2}" y="${H1/2}" text-anchor="middle" font-size="12" fill="var(--muted)">No weigh-ins in this period</text>`;
+  svg+=`<text x="0" y="10" font-size="11" font-weight="600" fill="var(--text)">Weight (${u})</text>`;
+  // panel 2: calories
+  const y2=H1+12, H2=58, kmax=Math.max(goal,...kc.filter(v=>v!=null),1)*1.1, ky=v=>y2+12+(H2-12)*(1-v/kmax), bw=Math.max(2,cw-2);
+  svg+=`<text x="0" y="${y2+8}" font-size="11" font-weight="600" fill="var(--text)">Planned calories</text>`;
+  kc.forEach((v,i)=>{ if(v!=null){ const top=ky(v), base=y2+H2; svg+=`<rect x="${xc(i)-bw/2}" y="${top}" width="${bw}" height="${base-top}" rx="${Math.min(2,bw/2)}" fill="var(--kcal)" opacity=".85"/>`; } });
+  svg+=`<line x1="${L}" x2="${W-R}" y1="${y2+H2}" y2="${y2+H2}" stroke="var(--grid)"/>`;
+  if(goal) svg+=`<line x1="${L}" x2="${W-R}" y1="${ky(goal)}" y2="${ky(goal)}" stroke="var(--text)" stroke-dasharray="4 3"/><text x="${L-6}" y="${ky(goal)+4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmt(goal)}</text>`;
+  // panel 3: exercise intensity
+  const y3=y2+H2+12;
+  svg+=`<text x="0" y="${y3+9}" font-size="11" font-weight="600" fill="var(--text)">Exercise</text>`;
+  dates.forEach((d,i)=>{ const l=exLevel(d); svg+=`<rect x="${xc(i)-bw/2}" y="${y3+14}" width="${bw}" height="16" rx="2" fill="${l?exFill(l):"var(--track)"}"/>`; });
+  svg+=`<text x="${L}" y="${y3+46}" font-size="10" fill="var(--muted)">${niceDate(dates[0])}</text><text x="${W-R}" y="${y3+46}" text-anchor="end" font-size="10" fill="var(--muted)">Today</text>`;
+  dates.forEach((d,i)=>svg+=`<rect x="${L+cw*i}" y="0" width="${cw}" height="${y3+32}" fill="transparent" data-td="${i}" style="cursor:pointer"/>`);
+  svg+=`</svg>`;
+  const legend=`<div class="legend">${EX.slice(1).map((n,i)=>`<span><i style="background:${exFill(i+1)};outline:1px solid var(--accent)"></i>${n}</span>`).join("")}</div>`;
+  const hasCal=kc.some(v=>v!=null);
+  return {html:`<div class="chart" id="trc">${svg}<div class="tip" id="trTip">Tap a day to see weight, calories and exercise together.</div></div>${legend}
+      ${hasCal?"":`<p class="hint">Calories fill in from today onward: each day the app records what you planned for that day.</p>`}`,
+    bind:()=>main.querySelectorAll("#trc [data-td]").forEach(r=>r.onclick=()=>{ const i=+r.dataset.td, d=dates[i], m=db.log[d]&&db.log[d].m;
+      $("#trTip").textContent=`${parseISO(d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}: ${wmap[d]!=null?`${fmt(wmap[d],1)} ${u}`:"no weigh-in"} · ${m?`${fmt(m.kcal)} kcal (P ${m.protein} · C ${m.carbs} · F ${m.fat})`:"no calories recorded"} · ${EX[exLevel(d)]}`; })};
+}
 function renderProgress(){
   setHeader("Progress", `<button class="btn small">⚖️ Log weight</button>`, ()=>openWeightDialog(renderProgress));
   const B=db.body, wd=weekDates(), today=isoDay();
-  const wk=weekMacroChart(), wc=weightChart();
+  const wk=weekMacroChart(), wc=weightChart(), tr=trendsChart(pref.trend||30);
   const recentW=B.weights.slice(-5).reverse();
   const first=B.progress[0], last=B.progress[B.progress.length-1];
   main.innerHTML=`
     <div class="card"><h3>Exercise this week</h3>
-      <div class="dots7">${wd.map((d,i)=>`<div class="${d===today?"today":""}">${DAYS[i]}<b class="${exercised(d)?"on":""}" data-ex="${d}" role="checkbox" aria-checked="${exercised(d)}" aria-label="Exercised ${DAYS_LONG[i]}">${exercised(d)?"✓":""}</b></div>`).join("")}</div>
-      <p class="hint">${wd.filter(exercised).length} of 7 days. Tap a day to change it.</p></div>
+      <div class="dots7">${wd.map((d,i)=>`<div class="${d===today?"today":""}">${DAYS[i]}<b data-ex="${d}" style="background:${exFill(exLevel(d))};border-color:${exLevel(d)?"var(--accent)":"var(--line)"};color:${exLevel(d)>2?"var(--accent-ink)":"var(--text)"};font-size:12px" aria-label="${DAYS_LONG[i]}: ${EX[exLevel(d)]}">${exLevel(d)?EX[exLevel(d)][0]:""}</b></div>`).join("")}</div>
+      <p class="hint">${wd.filter(exercised).length} of 7 days. Tap a day to change its intensity (W warmup, M moderate, I intense, B beast mode).</p></div>
+    <div class="card"><h3><span class="grow">Weight vs calories &amp; exercise</span><span class="seg" id="trR" style="margin:0;padding:2px">${[30,90].map(r=>`<button data-r="${r}" class="${(pref.trend||30)===r?"on":""}" style="padding:2px 8px">${r}d</button>`).join("")}</span></h3>${tr.html}</div>
     <div class="card"><h3>Planned week: calories by macro</h3>${wk.html}</div>
     <div class="card"><h3><span class="grow">Weight</span><span class="seg" id="wu" style="margin:0;padding:2px">${["lb","kg"].map(x=>`<button data-u="${x}" class="${B.unit===x?"on":""}" style="padding:2px 10px">${x}</button>`).join("")}</span></h3>
       ${wc.html}
@@ -711,8 +757,9 @@ function renderProgress(){
       ${first&&last&&first!==last?`<div class="cmp" style="margin-bottom:12px"><div><img data-ph="${first.photos[0]}" alt=""><div class="sub">${niceDate(first.d)} (first)</div></div><div><img data-ph="${last.photos[0]}" alt=""><div class="sub">${niceDate(last.d)} (latest)</div></div></div>`:""}
       ${B.progress.slice().reverse().map(e=>`<div class="sub" style="font-weight:600;margin:6px 0 4px">${parseISO(e.d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"})}</div>
         <div class="thumbs">${e.photos.map(id=>`<img data-ph="${id}" data-pview="${e.id}|${id}" alt="Progress photo">`).join("")}</div>`).join("")}</div>`:""}`;
-  hydratePhotos(main); wk.bind(); wc.bind();
-  main.querySelectorAll("[data-ex]").forEach(b=>b.onclick=()=>{ setExercised(b.dataset.ex, !exercised(b.dataset.ex)); renderProgress(); });
+  hydratePhotos(main); wk.bind(); wc.bind(); tr.bind();
+  main.querySelectorAll("[data-ex]").forEach(b=>b.onclick=()=>{ setEx(b.dataset.ex, (exLevel(b.dataset.ex)+1)%5); renderProgress(); });
+  main.querySelectorAll("#trR button").forEach(b=>b.onclick=()=>{ pref.trend=+b.dataset.r; savePref(); renderProgress(); });
   main.querySelectorAll("#wu button").forEach(b=>b.onclick=()=>{ const nu=b.dataset.u; if(nu===B.unit) return;
     if(B.weights.length && confirm(`Convert your logged weights to ${nu}?`)) B.weights.forEach(w=>w.w=+(nu==="kg"?w.w*0.45359237:w.w/0.45359237).toFixed(1));
     B.unit=nu; save(); renderProgress(); });
@@ -1228,6 +1275,7 @@ function renderSettings(){
   if(navigator.storage&&navigator.storage.persisted) navigator.storage.persisted().then(p=>{ const el=$("#pst"); if(el) el.textContent=p?"Storage is marked as protected on this device.":""; }).catch(()=>{});
 }
 
+try{ snapToday(); localStorage.setItem(KEY, JSON.stringify(db)); }catch(e){}
 render();
 // Ask the browser to protect this app's storage from automatic clean-up.
 try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
