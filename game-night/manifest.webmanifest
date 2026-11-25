@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "Game Night",
+  "short_name": "Game Night",
+  "description": "Twenty-six board, card, dice and puzzle games. Play solo, pass the device around, or play the computer. Works offline.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1f6f5c",
+  "theme_color": "#1f6f5c",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
