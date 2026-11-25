@@ -512,7 +512,7 @@ function renderHome(){
   else if(week) planHtml = DAYS.map((d,i)=>{ const es=P.entries.filter(e=>e.day===i); if(!es.length) return "";
       return `<div class="sub" style="margin-top:8px;font-weight:600">${DAYS_LONG[i]}</div>${es.map(planRow).join("")}`; }).join("");
   else planHtml = entries.length ? entries.map(planRow).join("") : `<div class="empty" style="padding:14px">Nothing planned for ${DAYS_LONG[pref.day]}.</div>`;
-  main.innerHTML=`${backupBanner()}${restoreCard()}${todayCard()}
+  main.innerHTML=`${restoreCard()}${todayCard()}
     <div class="seg" id="mode"><button data-m="day" class="${!week?"on":""}">Day</button><button data-m="week" class="${week?"on":""}">Week</button></div>
     ${week?"":`<div class="days" id="days">${DAYS.map((d,i)=>`<button data-d="${i}" class="${i===pref.day?"on":""} ${daysHave.has(i)?"has":""}">${d}<span class="dot"></span></button>`).join("")}</div>`}
     <div class="card"><h3><span class="grow">${week?"This week vs weekly goal":DAYS_LONG[pref.day]+" vs daily goal"}</span><button class="btn ghost small" id="goals">Edit goals</button></h3>
@@ -1377,7 +1377,7 @@ function setTheme(t){ pref.theme=t; savePref(); if(t==="dark") document.document
 function renderSettings(){
   setHeader("Settings");
   const last=getNum("-backup"), dark=pref.theme==="dark";
-  main.innerHTML=`<div class="card"><h3>Appearance</h3>
+  main.innerHTML=`${backupBanner()}<div class="card"><h3>Appearance</h3>
     <div class="seg" id="thm" style="margin:0"><button data-t="light" class="${dark?"":"on"}">☀️ Light</button><button data-t="dark" class="${dark?"on":""}">🌙 Dark</button></div></div>
     <div class="card"><h3>Your data</h3>
     <p>${db.ingredients.length} ingredients · ${db.recipes.length} recipes · ${db.plan.entries.length} planned meals.</p>
@@ -1391,7 +1391,7 @@ function renderSettings(){
     <p class="sub" style="margin:0">ℹ️ The app on your home screen and the same page open in the browser keep separate data. Use the home-screen app.</p>
     <p class="hint" id="pst"></p></div>`;
   main.querySelectorAll("#thm button").forEach(b=>b.onclick=()=>{ setTheme(b.dataset.t); renderSettings(); });
-  $("#exp").onclick=async()=>{ if(await doExport()) renderSettings(); };
+  $("#exp").onclick=async()=>{ if(await doExport()) renderSettings(); }; bindBackupBits();
   $("#imp").onclick=()=>pickRestore();
   if($("#undoRs")) $("#undoRs").onclick=()=>{ try{ const u=JSON.parse(localStorage.getItem(KEY+"-undo")); if(!confirm(`Go back to the data from before the last restore (${u.ingredients.length} ingredients, ${u.recipes.length} recipes)?`)) return;
     db=migrate(u); save(); localStorage.removeItem(KEY+"-undo"); toast("Restore undone"); renderSettings(); }catch(e){ toast("Nothing to undo"); } };
