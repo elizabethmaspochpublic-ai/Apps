@@ -459,8 +459,11 @@ function liveSearch(id, key, rerender){
    Home: goals, gauges, plan, calculator
    ========================================================= */
 const isSnack=e=>e.kind==="ing";
+// A snack is "n × qty unit" (e.g. 3 × 85 g mandarins); n defaults to 1
+const snackCount=e=>{ const n=parseQty(e.n); return n>0?n:1; };
+const snackItem=e=>({kind:"ing", id:e.ingId, qty:(parseQty(e.qty)||0)*snackCount(e), unit:e.unit});
 function entryMacros(e){
-  if(isSnack(e)) return itemInfo({kind:"ing", id:e.ingId, qty:e.qty, unit:e.unit}).m;
+  if(isSnack(e)) return itemInfo(snackItem(e)).m;
   const r=rec(e.recipeId); if(!r) return zero();
   const s=Number(r.servings)||1; return add(zero(), totals(r.id).total, (Number(e.servings)||0)/s);
 }
@@ -507,7 +510,7 @@ function renderHome(){
   bindPlanRows(renderHome); bindBackupBits(); bindTodayCard(renderHome);
 }
 function planQtyText(e){
-  if(isSnack(e)){ const n=parseQty(e.qty); return `${esc(String(e.qty))} ${esc(unitLabel(e.unit, n))}`; }
+  if(isSnack(e)){ const c=snackCount(e), n=parseQty(e.qty); return `${c!==1?esc(fmtQty(c,"piece"))+" × ":""}${esc(String(e.qty))} ${esc(unitLabel(e.unit, n))}`; }
   const n=Number(e.servings)||0; return `${fmtQty(n,"piece")} serv`;
 }
 function planRow(e){
@@ -526,19 +529,22 @@ function openPlanEdit(e, rerender){
   const title = x ? (snack?ingLabel(x):x.name) : "Deleted item";
   let ctl;
   if(snack){ const units=unitsFor(x); const list=units.includes(e.unit)?units:[e.unit,...units];
-    ctl=`<input id="peQ" class="grow" inputmode="text" value="${esc(String(e.qty))}" aria-label="Amount">
-      <select id="peU" aria-label="Unit">${unitOptions(list,e.unit)}</select>`; }
+    ctl=`<input id="peN" style="width:64px;text-align:center" inputmode="text" value="${esc(String(e.n??1))}" aria-label="How many"><span class="sub" style="align-self:center">×</span>
+      <input id="peQ" class="grow" style="min-width:0" inputmode="text" value="${esc(String(e.qty))}" aria-label="Amount each">
+      <select id="peU" style="width:96px" aria-label="Unit">${unitOptions(list,e.unit)}</select>`; }
   else ctl=`<input id="peQ" class="grow" inputmode="decimal" value="${esc(String(e.servings))}" aria-label="Servings"><span class="sub" style="align-self:center">servings</span>`;
   const body=openDlg(title, `<div class="sub" style="margin-bottom:6px">${snack?"Snack":"Recipe"} · ${DAYS_LONG[e.day]}</div>
-    <label class="sub">How much?</label>
+    <label class="sub">${snack?"How many × amount each (e.g. 3 × 85 g)":"How much?"}</label>
     <div class="row" style="display:flex;gap:8px;margin:4px 0 10px">${ctl}</div>
     <div class="sub" id="peM"></div>
     <div style="display:flex;gap:8px;margin-top:16px"><button class="btn danger" id="peRm">Remove</button><span class="grow"></span><button class="btn" id="peOk">Save</button></div>`);
-  const q=body.querySelector("#peQ"), u=body.querySelector("#peU"), m=body.querySelector("#peM");
+  const q=body.querySelector("#peQ"), u=body.querySelector("#peU"), c=body.querySelector("#peN"), m=body.querySelector("#peM");
   const draft=()=>{ const n=parseQty(q.value); const t={...e};
-    if(snack){ t.qty = n>0 ? q.value.trim() : "1"; t.unit=u.value; } else t.servings = n>0 ? n : 1; return t; };
-  const show=()=>{ m.textContent = short(entryMacros(draft())); };
-  q.oninput=show; if(u) u.onchange=show; show();
+    if(snack){ t.qty = n>0 ? q.value.trim() : "1"; t.unit=u.value; const k=parseQty(c.value); t.n = k>0 ? c.value.trim() : "1"; }
+    else t.servings = n>0 ? n : 1; return t; };
+  const show=()=>{ const t=draft(); const i=snack?itemInfo(snackItem(t)):null;
+    m.textContent = (snack&&snackCount(t)!==1&&i&&i.grams?`Total ${fmt(i.grams)} g · `:"") + short(entryMacros(t)); };
+  q.oninput=show; if(c) c.oninput=show; if(u) u.onchange=show; show();
   body.querySelector("#peOk").onclick=()=>{ Object.assign(e, draft()); save(); $("#dlg").close(); rerender(); };
   body.querySelector("#peRm").onclick=()=>{ db.plan.entries=db.plan.entries.filter(z=>z!==e); save(); $("#dlg").close(); rerender(); toast("Removed"); };
 }
@@ -583,7 +589,7 @@ function openPlanDialog(recipeId, mode, ingId){
     <div id="pmIng" ${mode==="ing"?"":"hidden"}>
       ${quickChips("ing")}
       ${ings.length?`<label class="f"><span>Ingredient</span><select id="pi">${ings.map(x=>`<option value="${x.id}" ${x.id===ingId?"selected":""}>${esc(ingLabel(x))}</option>`).join("")}</select></label>
-      <span class="sub">Amount (each day)</span><div class="grid2" style="grid-template-columns:1fr 1.2fr;margin:4px 0 12px"><input id="pq" inputmode="text"><select id="pu"></select></div>`:`<p class="empty" style="padding:8px">No ingredients yet.</p>`}</div>
+      <span class="sub">How many × amount each (each day)</span><div style="display:flex;gap:8px;margin:4px 0 12px"><input id="pn" style="width:64px;text-align:center" inputmode="text" value="1" aria-label="How many"><span class="sub" style="align-self:center">×</span><input id="pq" style="flex:1;min-width:0" inputmode="text" aria-label="Amount each"><select id="pu" style="width:110px" aria-label="Unit"></select></div>`:`<p class="empty" style="padding:8px">No ingredients yet.</p>`}</div>
     <span class="sub">Which days</span>
     <div class="days" id="pd" style="margin-top:4px">${DAYS.map((d,i)=>`<button data-d="${i}" class="${sel.has(i)?"on":""}">${d}</button>`).join("")}</div>
     <div class="chips" id="pdq"><button data-q="all">Every day</button><button data-q="wk">Weekdays</button><button data-q="none">Clear</button></div>
@@ -594,7 +600,7 @@ function openPlanDialog(recipeId, mode, ingId){
   const info=()=>{ const el=$("#pinfo"); $("#perr").textContent="";
     if(mode==="rec"){ if(!recs.length) return el.textContent=""; const r=rec($("#pr").value); const s=Number(r.servings)||1; const n=parseQty($("#ps").value)||0;
       el.textContent=`Recipe makes ${fmt(s,2)} serving${s===1?"":"s"}. ${sel.size} day${sel.size===1?"":"s"} × ${fmt(n,2)} = ${fmt(sel.size*n,2)} servings (${fmt(sel.size*n/s,2)} batch${sel.size*n/s===1?"":"es"} to cook).`; }
-    else { if(!ings.length) return el.textContent=""; const i=itemInfo({kind:"ing",id:$("#pi").value,qty:$("#pq").value,unit:$("#pu").value});
+    else { if(!ings.length) return el.textContent=""; const i=itemInfo(snackItem({ingId:$("#pi").value,qty:$("#pq").value,unit:$("#pu").value,n:$("#pn").value}));
       el.textContent = i.bad ? "" : `Each day: ${short(i.m)}`; } };
   const paint=()=>{ body.querySelectorAll("#pd button").forEach(b=>b.classList.toggle("on", sel.has(+b.dataset.d))); info(); };
   body.querySelectorAll("#pm button").forEach(b=>b.onclick=()=>{ mode=b.dataset.m; body.querySelectorAll("#pm button").forEach(z=>z.classList.toggle("on",z===b));
@@ -606,7 +612,7 @@ function openPlanDialog(recipeId, mode, ingId){
     if(q.kind==="rec"){ $("#pr").value=q.id; $("#ps").value=q.qty; }
     else { $("#pi").value=q.id; setIngDefaults(); $("#pq").value=q.qty; if([...$("#pu").options].some(o=>o.value===q.unit)) $("#pu").value=q.unit; }
     body.querySelectorAll("[data-qk]").forEach(z=>z.classList.toggle("on", z===b)); info(); });
-  if(ings.length){ $("#pi").onchange=setIngDefaults; $("#pq").oninput=info; $("#pu").onchange=info; setIngDefaults(); }
+  if(ings.length){ $("#pi").onchange=setIngDefaults; $("#pq").oninput=info; $("#pn").oninput=info; $("#pu").onchange=info; setIngDefaults(); }
   info();
   $("#padd").onclick=()=>{
     if(!sel.size) return $("#perr").textContent="Pick at least one day.";
@@ -617,7 +623,8 @@ function openPlanDialog(recipeId, mode, ingId){
       noteRecent({kind:"rec", id:$("#pr").value, qty:String(n)}); }
     else { if(!ings.length) return $("#perr").textContent="Add an ingredient first.";
       const q=$("#pq").value.trim(); if(!(parseQty(q)>0)) return $("#perr").textContent="Enter an amount, like 30 or 1/2.";
-      days.forEach(d=>db.plan.entries.push({id:uid(), kind:"ing", ingId:$("#pi").value, qty:q, unit:$("#pu").value, day:d}));
+      const k=parseQty($("#pn").value), n = k>0 ? $("#pn").value.trim() : "1";
+      days.forEach(d=>db.plan.entries.push({id:uid(), kind:"ing", ingId:$("#pi").value, qty:q, unit:$("#pu").value, n, day:d}));
       noteRecent({kind:"ing", id:$("#pi").value, qty:q, unit:$("#pu").value}); }
     save(); $("#dlg").close(); toast("Added"); if(route.tab==="home") renderHome();
   };
@@ -890,7 +897,7 @@ function bestAmount(x, grams){
 function groceryData(){
   const acc={};
   for(const e of db.plan.entries){
-    if(isSnack(e)){ if(ing(e.ingId)){ const i=itemInfo({kind:"ing",id:e.ingId,qty:e.qty,unit:e.unit}); acc[e.ingId]=(acc[e.ingId]||0)+i.grams; if(i.bad) acc._bad=true; } continue; }
+    if(isSnack(e)){ if(ing(e.ingId)){ const i=itemInfo(snackItem(e)); acc[e.ingId]=(acc[e.ingId]||0)+i.grams; if(i.bad) acc._bad=true; } continue; }
     const r=rec(e.recipeId); if(!r) continue;
     flatten(r.id, (Number(e.servings)||0)/(Number(r.servings)||1), acc); }
   const bad=acc._bad; delete acc._bad;
