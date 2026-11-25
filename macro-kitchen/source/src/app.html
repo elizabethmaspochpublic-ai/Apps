@@ -52,8 +52,8 @@ input,select{font:inherit;font-size:16px;color:var(--text);background:var(--card
   border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0}
 input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none}
 input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
-label.f{display:block;margin:0 0 12px}
-label.f span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+label.f,div.f{display:block;margin:0 0 12px}
+label.f span,div.f>span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .grid3{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:8px}
 .search{margin-bottom:12px}
@@ -94,6 +94,15 @@ label.f span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
 .stepper input{width:64px;text-align:center}
 .stepper button{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--chip);color:var(--accent);font-size:22px;font-weight:600;line-height:1}
 .qtot{background:var(--chip);border-radius:12px;padding:10px 12px}
+.spick{position:relative}
+.spick .spq{padding-left:36px;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23888' stroke-width='2'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E") no-repeat 12px center}
+.spick .spl{margin-top:4px;border:1px solid var(--line);border-radius:10px;background:var(--card);max-height:240px;overflow:auto}
+.spick .spl button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:none;color:var(--text);padding:11px 12px;font:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spick .spl button:last-child{border-bottom:0}
+.spick .spl button.on{color:var(--accent);font-weight:600}
+.chips.tight button{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chips.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.chips.two button{text-align:left}
 .weekbar{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:6px;margin-top:12px}
 .weekbar button{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;padding:8px 2px;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .weekbar button b{font-size:17px;color:var(--accent);font-weight:600;line-height:1.1}
@@ -569,14 +578,42 @@ function openPlanEdit(e, rerender){
 /* ---------- Favorites (★ on an ingredient or recipe) and recent picks ---------- */
 function noteRecent(q){ const P=db.plan; const k=JSON.stringify([q.kind,q.id,q.qty,q.unit||""]);
   P.recent=[q, ...P.recent.filter(r=>JSON.stringify([r.kind,r.id,r.qty,r.unit||""])!==k)].slice(0,10); }
+/* ---------- Search-as-you-type picker: hidden input #id holds the chosen id ---------- */
+const pickLabels={};
+function searchPickHtml(id, sel, ph){
+  return `<div class="spick" data-for="${id}"><input type="hidden" id="${id}" value="${esc(sel||"")}">
+    <input class="spq" type="search" autocomplete="off" autocorrect="off" enterkeyhint="search" placeholder="${esc(ph)}" aria-label="${esc(ph)}">
+    <div class="spl" hidden></div></div>`;
+}
+function setSearchPick(id, val){ const h=document.getElementById(id); if(!h) return; h.value=val;
+  const w=h.closest(".spick"); w.querySelector(".spq").value=(pickLabels[id]||{})[val]||""; }
+function bindSearchPick(root, id, items, onPick){
+  const w=root.querySelector(`.spick[data-for="${id}"]`), h=w.querySelector("#"+id), q=w.querySelector(".spq"), l=w.querySelector(".spl");
+  pickLabels[id]=Object.fromEntries(items.map(i=>[i.id,i.label]));
+  const draw=()=>{ const t=q.value.trim().toLowerCase(), cur=pickLabels[id][h.value];
+    const words=(t&&q.value!==cur)?t.split(/\s+/):[];
+    const hits=items.filter(i=>words.every(x=>i.label.toLowerCase().includes(x)))
+      .sort((a,b)=>(b.fav?1:0)-(a.fav?1:0)||a.label.localeCompare(b.label)).slice(0,30);
+    l.innerHTML = hits.length ? hits.map(i=>`<button type="button" data-id="${i.id}" class="${i.id===h.value?"on":""}">${i.fav?"★ ":""}${esc(i.label)}</button>`).join("")
+      : `<div class="sub" style="padding:10px 12px">No match for "${esc(q.value)}"</div>`;
+    l.hidden=false; };
+  q.onfocus=()=>{ q.select(); draw(); };
+  q.oninput=draw;
+  l.onpointerdown=ev=>ev.preventDefault();   // keep focus so the tap lands
+  l.onclick=ev=>{ const b=ev.target.closest("button[data-id]"); if(!b) return;
+    setSearchPick(id, b.dataset.id); l.hidden=true; q.blur(); onPick&&onPick(); };
+  q.onblur=()=>setTimeout(()=>{ l.hidden=true; q.value=pickLabels[id][h.value]||""; },150);
+  q.onkeydown=ev=>{ if(ev.key==="Enter"){ ev.preventDefault(); const b=l.querySelector("button[data-id]"); if(b) b.click(); } };
+  setSearchPick(id, h.value);
+}
 function quickChips(kind){
   const P=db.plan, get=id=>kind==="rec"?rec(id):ing(id);
   const label=(o,q)=>kind==="rec" ? `${esc(o.name)}${q&&q.qty!=="1"?` ×${esc(q.qty)}`:""}` : `${esc(ingLabel(o))}${q?` · ${esc(q.qty)} ${esc(unitLabel(q.unit,parseQty(q.qty)))}`:""}`;
   const favs=(kind==="rec"?db.recipes:db.ingredients).filter(o=>o.fav).sort(byName).map(o=>{ const q=kind==="rec"?{kind,id:o.id,qty:"1"}:{kind,id:o.id,qty:o.serving.qty,unit:o.serving.unit};
     return `<button data-qk='${esc(JSON.stringify(q))}'>★ ${label(o, kind==="ing"?q:null)}</button>`; });
-  const rec_=P.recent.filter(q=>q.kind===kind&&get(q.id)).slice(0,6).map(q=>`<button data-qk='${esc(JSON.stringify(q))}'>↺ ${label(get(q.id),q)}</button>`);
+  const rec_=P.recent.filter(q=>q.kind===kind&&get(q.id)).slice(0,2).map(q=>`<button data-qk='${esc(JSON.stringify(q))}'>↺ ${label(get(q.id),q)}</button>`);
   if(!favs.length&&!rec_.length) return "";
-  return `${favs.length?`<span class="sub">Favorites</span><div class="chips">${favs.join("")}</div>`:""}${rec_.length?`<span class="sub">Recent</span><div class="chips">${rec_.join("")}</div>`:""}`;
+  return `${favs.length?`<span class="sub">Favorites</span><div class="chips tight">${favs.join("")}</div>`:""}${rec_.length?`<span class="sub">Recent</span><div class="chips tight two">${rec_.join("")}</div>`:""}`;
 }
 function photoNotesCard(o, opts={}){
   const ph=o.photos||[];
@@ -602,11 +639,11 @@ function openPlanDialog(recipeId, mode, ingId){
     <div class="seg" id="pm"><button data-m="rec" class="${mode==="rec"?"on":""}">Recipe</button><button data-m="ing" class="${mode==="ing"?"on":""}">Snack (ingredient)</button></div>
     <div id="pmRec" ${mode==="rec"?"":"hidden"}>
       ${quickChips("rec")}
-      ${recs.length?`<label class="f"><span>Recipe</span><select id="pr">${recs.map(r=>`<option value="${r.id}" ${r.id===recipeId?"selected":""}>${esc(r.name)}</option>`).join("")}</select></label>
+      ${recs.length?`<div class="f"><span>Recipe</span>${searchPickHtml("pr", recipeId&&rec(recipeId)?recipeId:recs[0].id, "Search recipes")}</div>
       <label class="f"><span>Servings you'll eat (each day)</span><input id="ps" inputmode="decimal" value="1"></label>`:`<p class="empty" style="padding:8px">No recipes yet.</p>`}</div>
     <div id="pmIng" ${mode==="ing"?"":"hidden"}>
       ${quickChips("ing")}
-      ${ings.length?`<label class="f"><span>Ingredient</span><select id="pi">${ings.map(x=>`<option value="${x.id}" ${x.id===ingId?"selected":""}>${esc(ingLabel(x))}</option>`).join("")}</select></label>
+      ${ings.length?`<div class="f"><span>Ingredient</span>${searchPickHtml("pi", ingId&&ing(ingId)?ingId:ings[0].id, "Search ingredients")}</div>
       <div class="qform" style="margin:4px 0 12px"><div class="qrow"><span>How many</span>${stepHtml("pn",1,"How many")}</div>
       <div class="qrow col"><span>Amount each</span><div class="qamt"><input id="pq" inputmode="text" aria-label="Amount each"><select id="pu" aria-label="Unit"></select></div></div></div>`:`<p class="empty" style="padding:8px">No ingredients yet.</p>`}</div>
     <span class="sub">Which days</span>
@@ -626,12 +663,12 @@ function openPlanDialog(recipeId, mode, ingId){
     $("#pmRec").hidden=mode!=="rec"; $("#pmIng").hidden=mode!=="ing"; info(); });
   body.querySelectorAll("#pd button").forEach(b=>b.onclick=()=>{ const d=+b.dataset.d; sel.has(d)?sel.delete(d):sel.add(d); paint(); });
   body.querySelectorAll("#pdq button").forEach(b=>b.onclick=()=>{ sel.clear(); if(b.dataset.q==="all") DAYS.forEach((_,i)=>sel.add(i)); if(b.dataset.q==="wk") [0,1,2,3,4].forEach(i=>sel.add(i)); paint(); });
-  if(recs.length){ $("#pr").onchange=info; $("#ps").oninput=info; }
+  if(recs.length){ bindSearchPick(body,"pr",recs.map(r=>({id:r.id,label:r.name,fav:r.fav})),info); $("#ps").oninput=info; }
   body.querySelectorAll("[data-qk]").forEach(b=>b.onclick=()=>{ const q=JSON.parse(b.dataset.qk);
-    if(q.kind==="rec"){ $("#pr").value=q.id; $("#ps").value=q.qty; }
-    else { $("#pi").value=q.id; setIngDefaults(); $("#pq").value=q.qty; if([...$("#pu").options].some(o=>o.value===q.unit)) $("#pu").value=q.unit; }
+    if(q.kind==="rec"){ setSearchPick("pr", q.id); $("#ps").value=q.qty; }
+    else { setSearchPick("pi", q.id); setIngDefaults(); $("#pq").value=q.qty; if([...$("#pu").options].some(o=>o.value===q.unit)) $("#pu").value=q.unit; }
     body.querySelectorAll("[data-qk]").forEach(z=>z.classList.toggle("on", z===b)); info(); });
-  if(ings.length){ $("#pi").onchange=setIngDefaults; $("#pq").oninput=info; bindStep(body,"pn",1,1,info); $("#pu").onchange=info; setIngDefaults(); }
+  if(ings.length){ bindSearchPick(body,"pi",ings.map(x=>({id:x.id,label:ingLabel(x),fav:x.fav})),setIngDefaults); $("#pq").oninput=info; bindStep(body,"pn",1,1,info); $("#pu").onchange=info; setIngDefaults(); }
   info();
   $("#padd").onclick=()=>{
     if(!sel.size) return $("#perr").textContent="Pick at least one day.";
