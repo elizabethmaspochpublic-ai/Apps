@@ -3829,37 +3829,64 @@ game({
     }
     root.append(h('style', {}, `
       .dm{display:flex;flex-direction:column;gap:10px;align-items:center;width:min(100%,760px)}
-      .dm-line{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;align-items:center;min-height:60px;width:100%}
-      .dm-t{display:inline-flex;border-radius:6px;background:#fffdf8;border:1.5px solid #26262b;padding:0;box-shadow:0 1px 2px rgba(0,0,0,.3);flex:none}
-      .dm-t .h{width:var(--ds,26px);height:var(--ds,26px);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(3,1fr);padding:3px}
-      .dm-t .h+.h{border-left:1.5px solid #26262b}
-      .dm-t.v{flex-direction:column}.dm-t.v .h+.h{border-left:0;border-top:1.5px solid #26262b}
-      .dm-t .h i{width:70%;height:70%;margin:auto;border-radius:50%;background:#26262b;visibility:hidden}
-      .dm-t .h i.on{visibility:visible}
-      .dm-t.sel{box-shadow:0 0 0 3px var(--wood);transform:translateY(-6px)}
+      .dm-felt-in{display:flex;flex-direction:column;gap:4px;width:100%}
+      .dm-row{display:flex;align-items:center;gap:2px;justify-content:flex-start}
+      .dm-row.rtl{flex-direction:row-reverse}
+      .dm-row.one{justify-content:center}
+      .dm-t{display:block;flex:none;box-sizing:border-box;padding:0;border-radius:calc(var(--s) * .18);background:#fffdf8;border:1.5px solid #26262b;box-shadow:0 1px 2px rgba(0,0,0,.3);width:calc(var(--s) * 2);height:var(--s);transition:transform .12s}
+      .dm-t.v{width:var(--s);height:calc(var(--s) * 2)}
+      .dm-t svg{display:block;width:100%;height:100%}
+      .dm-t.sel{box-shadow:0 0 0 3px var(--p3),0 4px 8px rgba(0,0,0,.35);transform:translateY(-6px)}
+      .dm-t.end{box-shadow:0 0 0 2.5px var(--p3)}
       .dm-t.no{opacity:.5}
       .dm-t:disabled{cursor:default}
-      .dm-hand{--ds:30px}
-      .dm-end{border:2px dashed rgba(255,255,255,.85);background:rgba(255,255,255,.18);color:#fff;border-radius:8px;font-weight:800;padding:0 10px;height:44px;flex:none}`));
-    const PIP = { 0: [], 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+      .dm-hand{align-items:center;min-height:0}
+      .dm-end{border:2px dashed currentColor;background:rgba(255,255,255,.22);color:var(--felt-ink,#fff);border-radius:8px;font-weight:800;font-size:13px;padding:0 6px;height:calc(var(--s) * 1.6);min-height:36px;min-width:52px;flex:none;box-sizing:border-box}`));
+    // standard die layouts on a 3x3 grid (index = row * 3 + col)
+    const PIP = { 0: [], 1: [4], 2: [2, 6], 3: [2, 4, 6], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 3, 6, 2, 5, 8] };
+    const POS = [2.7, 5, 7.3];
     function tileEl(a, b, opts = {}) {
-      const el = h('button', { class: 'dm-t' + (opts.v ? ' v' : '') + (opts.cls ? ' ' + opts.cls : ''), disabled: !opts.onclick, onclick: opts.onclick, 'aria-label': `${a}-${b}` });
-      [a, b].forEach(v => { const half = h('span', { class: 'h' }); for (let k = 0; k < 9; k++) half.append(h('i', { class: PIP[v].includes(k) ? 'on' : '' })); el.append(half); });
+      const v = !!opts.v, el = h('button', { class: 'dm-t' + (v ? ' v' : '') + (opts.cls ? ' ' + opts.cls : ''), style: { '--s': (opts.s || 28) + 'px' }, disabled: !opts.onclick, onclick: opts.onclick, 'aria-label': `${a}-${b}` });
+      const svg = sv('svg', { viewBox: v ? '0 0 10 20' : '0 0 20 10', 'aria-hidden': 'true' });
+      svg.append(sv('path', { d: v ? 'M1.3 10H8.7' : 'M10 1.3V8.7', stroke: '#26262b', 'stroke-width': .55, 'stroke-linecap': 'round' }));
+      [a, b].forEach((val, half) => PIP[val].forEach(k => {
+        let r = k / 3 | 0, c = k % 3;
+        if (!v) [r, c] = [c, 2 - r]; // turn the pattern with the tile
+        const x = POS[c] + (!v && half ? 10 : 0), y = POS[r] + (v && half ? 10 : 0);
+        svg.append(sv('circle', { cx: x, cy: y, r: 1.02, fill: '#26262b' }));
+      }));
+      el.append(svg);
       return el;
     }
     const seatsEl = h('div', { class: 'pc-row' }), felt = h('div', { class: 'pc-felt' }), logEl = h('div', { class: 'pc-log', 'aria-live': 'polite' }), ctl = h('div', { class: 'row' }), handEl = h('div', { class: 'pc-hand dm-hand' });
     root.append(h('div', { class: 'dm' }, seatsEl, felt, logEl, ctl, handEl));
     function render() {
       seatsEl.innerHTML = '';
-      P.forEach((p, i) => seatsEl.append(Cards.seat(p, [`${hands[i].length} tiles`, TARGET ? h('b', {}, `${total[i]} pts`) : ''], { cur: i === turn })));
+      P.forEach((p, i) => seatsEl.append(Cards.seat(p, [`${hands[i].length} tile${hands[i].length === 1 ? "" : "s"}`, TARGET ? h('b', {}, `${total[i]} pts`) : ''], { cur: i === turn })));
       felt.innerHTML = '';
-      const lineEl = h('div', { class: 'dm-line' });
+      const lineEl = h('div', { class: 'dm-felt-in' });
       const e = ends();
       const showEnds = sel && !hidden && !done;
-      if (showEnds && line.length && fits(sel, e[0])) lineEl.append(h('button', { class: 'dm-end', onclick: () => place(0) }, '← Here'));
-      if (!line.length) lineEl.append(showEnds ? h('button', { class: 'dm-end', onclick: () => place(1) }, 'Play first tile') : h('span', { style: { fontWeight: 700, opacity: .8 } }, 'No tiles played yet'));
-      line.forEach(t => lineEl.append(tileEl(t.a, t.b, { v: t.a === t.b })));
-      if (showEnds && line.length && fits(sel, e[1])) lineEl.append(h('button', { class: 'dm-end', onclick: () => place(1) }, 'Here →'));
+      // the line snakes back and forth across the table so it stays readable on a phone
+      const W = Math.max(240, (felt.clientWidth || Math.min(innerWidth - 40, 720)) - 28);
+      const items = [];
+      if (showEnds && line.length && fits(sel, e[0])) items.push({ btn: 0 });
+      line.forEach((t, k) => items.push({ t, k }));
+      if (showEnds && line.length && fits(sel, e[1])) items.push({ btn: 1 });
+      const wOf = (it, s) => it.btn != null ? Math.max(52, s * 1.9) + 2 : (it.t.a === it.t.b ? s : 2 * s) + 2;
+      const pack = s => { const rows = [[]]; let x = 0; items.forEach(it => { const w = wOf(it, s); if (x + w > W && rows[rows.length - 1].length) { rows.push([]); x = 0; } rows[rows.length - 1].push(it); x += w; }); return rows; };
+      let S = 30, rows = pack(S);
+      for (const s of [30, 27, 24, 22, 20, 18]) { S = s; rows = pack(s); if (rows.length <= 3) break; }
+      if (!line.length) lineEl.append(h('div', { class: 'dm-row one' }, showEnds ? h('button', { class: 'dm-end', style: { '--s': '30px' }, onclick: () => place(1) }, 'Play first tile') : h('span', { style: { fontWeight: 700, opacity: .8 } }, 'No tiles played yet')));
+      else rows.forEach((row, ri) => {
+        const rtl = ri % 2 === 1, rowEl = h('div', { class: 'dm-row' + (rtl ? ' rtl' : '') + (rows.length === 1 ? ' one' : '') });
+        row.forEach(it => {
+          if (it.btn != null) { const side = it.btn; rowEl.append(h('button', { class: 'dm-end', style: { '--s': S + 'px' }, onclick: () => place(side), 'aria-label': `Play on the ${e[side]} end` }, (side === 0) !== rtl ? '← Here' : 'Here →')); return; }
+          const t = it.t, isEnd = showEnds && ((it.k === 0 && fits(sel, e[0])) || (it.k === line.length - 1 && fits(sel, e[1])));
+          rowEl.append(rtl ? tileEl(t.b, t.a, { v: t.a === t.b, s: S, cls: isEnd ? 'end' : '' }) : tileEl(t.a, t.b, { v: t.a === t.b, s: S, cls: isEnd ? 'end' : '' }));
+        });
+        lineEl.append(rowEl);
+      });
       felt.append(lineEl, h('div', { style: { fontWeight: 700, fontSize: '13px' } }, `Boneyard: ${yard.length}` + (e ? ` · Open ends: ${e[0]} and ${e[1]}` : '')));
       logEl.textContent = log;
       ctl.innerHTML = '';
@@ -3867,7 +3894,9 @@ game({
       if (hidden) { handEl.append(h('span', { class: 'hide' }, 'Tiles hidden')); }
       else {
         const any = hands[turn].some(canPlay);
-        hands[turn].forEach(t => { const ok = canPlay(t) && !done; handEl.append(tileEl(t[0], t[1], { cls: (sel === t ? 'sel' : '') + (ok ? '' : ' no'), onclick: ok ? () => { sel = sel === t ? null : t; render(); } : null })); });
+        const cnt = hands[turn].length, HW = (handEl.clientWidth || Math.min(innerWidth - 32, 760)) - 20;
+        const HS = Math.max(24, Math.min(40, Math.floor((HW - (Math.min(cnt, 9) - 1) * 5) / Math.min(cnt, 9))));
+        hands[turn].forEach(t => { const ok = canPlay(t) && !done; handEl.append(tileEl(t[0], t[1], { v: true, s: HS, cls: (sel === t ? 'sel' : '') + (ok ? '' : ' no'), onclick: ok ? () => { sel = sel === t ? null : t; render(); } : null })); });
         if (!done && !any) ctl.append(yard.length ? h('button', { class: 'btn wood', onclick: drawTile }, 'Draw from boneyard') : h('button', { class: 'btn', onclick: pass }, 'Pass'));
         else if (!done) ctl.append(h('span', { class: 'muted', style: { fontWeight: 700 } }, sel ? 'Now tap which end to play on.' : 'Tap a tile you can play.'));
       }
@@ -3918,13 +3947,13 @@ game({
         if (!yard.length) return pass();
         drawTile(); await api.think(450); if (!api.alive() || done) return;
       }
-      const hand = hands[turn], e = ends();
+      const hand = hands[turn], e = ends(), lvl = window.__levels ? window.__levels[turn] : api.level;
       const cnt = v => hand.filter(t => t[0] === v || t[1] === v).length;
       let best = null, bv = -Infinity;
       hand.filter(canPlay).forEach(t => [0, 1].forEach(side => {
         if (line.length && !fits(t, e[side])) return;
         const open = !line.length ? null : t[0] === e[side] ? t[1] : t[0];
-        let v = api.level === 0 ? Math.random() : t[0] + t[1] + (t[0] === t[1] ? 4 : 0) + (open != null && api.level === 2 ? cnt(open) * 2 : 0) + Math.random() * .5;
+        let v = lvl === 0 ? 12 - t[0] - t[1] - (t[0] === t[1] ? 3 : 0) + Math.random() * 6 : t[0] + t[1] + (t[0] === t[1] ? 4 : 0) + (open != null && lvl === 2 ? cnt(open) * 2 : 0) + Math.random() * .5;
         if (v > bv) { bv = v; best = [t, side]; }
       }));
       sel = best[0]; place(best[1]);
