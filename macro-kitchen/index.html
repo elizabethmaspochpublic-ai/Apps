@@ -38,7 +38,7 @@ header h1{font-size:22px;margin:0;flex:1}
 main{padding:12px 16px;max-width:720px;margin:0 auto}
 nav.tabs{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);
   border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);z-index:6}
-nav.tabs button{flex:1;border:0;background:none;padding:8px 0 10px;font-size:11px;color:var(--muted)}
+nav.tabs button{flex:1;min-width:0;border:0;background:none;padding:8px 0 10px;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 nav.tabs button .ico{display:block;font-size:20px;line-height:1.25}
 nav.tabs button.on{color:var(--accent);font-weight:600}
 button{font:inherit;cursor:pointer;color:inherit}
@@ -83,8 +83,16 @@ label.f span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
 .days button.has .dot{opacity:.7}
 .line{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
 .line:last-child{border-bottom:0}
+.pline{display:flex;align-items:center;gap:10px;width:100%;padding:12px 2px;border:0;border-bottom:1px solid var(--line);background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.pline:last-of-type{border-bottom:0}
+.pline .pname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pline .pqty{flex:none;font-size:14px;color:var(--accent);background:var(--chip);border-radius:999px;padding:4px 10px;font-weight:600;white-space:nowrap}
 .line input.qty{width:72px;text-align:right;padding:10px 8px}
 .line select.unit{width:86px;padding:10px 4px}
+.line.wrap{flex-wrap:wrap;row-gap:6px}
+.line.wrap>.grow{flex-basis:100%}
+.line.wrap input.qty{flex:1;max-width:120px}
+.line.wrap select.unit{flex:1;width:auto}
 .brand{font-weight:400;color:var(--muted);font-size:.92em}
 .brand::before{content:"· "}
 .tag{font-size:11px;background:var(--chip);color:var(--accent);border-radius:6px;padding:1px 6px;margin-left:4px;font-weight:600;vertical-align:middle}
@@ -498,27 +506,41 @@ function renderHome(){
   $("#svw").onclick=openSavedWeeks;
   bindPlanRows(renderHome); bindBackupBits(); bindTodayCard(renderHome);
 }
+function planQtyText(e){
+  if(isSnack(e)){ const n=parseQty(e.qty); return `${esc(String(e.qty))} ${esc(unitLabel(e.unit, n))}`; }
+  const n=Number(e.servings)||0; return `${fmtQty(n,"piece")} serv`;
+}
 function planRow(e){
-  if(isSnack(e)){ const x=ing(e.ingId); const units=unitsFor(x); const list=units.includes(e.unit)?units:[e.unit,...units];
-    return `<div class="line" data-e="${e.id}"><div class="grow"><div>${x?ingHtml(x):"<i>(deleted ingredient)</i>"}<span class="tag">snack</span></div>
-      <div class="sub">${short(entryMacros(e))}</div></div>
-      <input class="qty pq" inputmode="text" value="${esc(e.qty)}" aria-label="Amount">
-      <select class="unit pu" aria-label="Unit">${unitOptions(list,e.unit)}</select>
-      <button class="btn danger small prm" aria-label="Remove">✕</button></div>`; }
-  const r=rec(e.recipeId);
-  return `<div class="line" data-e="${e.id}"><div class="grow"><div>${r?esc(r.name):"<i>(deleted recipe)</i>"}</div>
-    <div class="sub">${short(entryMacros(e))}</div></div>
-    <input class="qty pq" inputmode="decimal" value="${esc(e.servings)}" aria-label="Servings"><span class="sub">serv</span>
-    <button class="btn danger small prm" aria-label="Remove">✕</button></div>`;
+  const snack=isSnack(e), x=snack?ing(e.ingId):rec(e.recipeId);
+  const name = x ? (snack?esc(ingLabel(x)):esc(x.name)) : `<i>(deleted ${snack?"ingredient":"recipe"})</i>`;
+  return `<button type="button" class="pline" data-e="${e.id}" aria-label="Edit ${x?esc(snack?ingLabel(x):x.name):"item"}">
+    <span class="pname">${name}</span><span class="pqty">${planQtyText(e)}</span></button>`;
 }
 function bindPlanRows(rerender){
-  main.querySelectorAll(".line[data-e]").forEach(l=>{
-    const e=db.plan.entries.find(z=>z.id===l.dataset.e);
-    l.querySelector(".pq").onchange=ev=>{ const n=parseQty(ev.target.value);
-      if(isSnack(e)) e.qty = n>0 ? ev.target.value.trim() : "1"; else e.servings= n>0?n:1; save(); rerender(); };
-    const u=l.querySelector(".pu"); if(u) u.onchange=()=>{ e.unit=u.value; save(); rerender(); };
-    l.querySelector(".prm").onclick=()=>{ db.plan.entries=db.plan.entries.filter(z=>z!==e); save(); rerender(); };
+  main.querySelectorAll(".pline[data-e]").forEach(l=>{
+    l.onclick=()=>{ const e=db.plan.entries.find(z=>z.id===l.dataset.e); if(e) openPlanEdit(e, rerender); };
   });
+}
+function openPlanEdit(e, rerender){
+  const snack=isSnack(e), x=snack?ing(e.ingId):rec(e.recipeId);
+  const title = x ? (snack?ingLabel(x):x.name) : "Deleted item";
+  let ctl;
+  if(snack){ const units=unitsFor(x); const list=units.includes(e.unit)?units:[e.unit,...units];
+    ctl=`<input id="peQ" class="grow" inputmode="text" value="${esc(String(e.qty))}" aria-label="Amount">
+      <select id="peU" aria-label="Unit">${unitOptions(list,e.unit)}</select>`; }
+  else ctl=`<input id="peQ" class="grow" inputmode="decimal" value="${esc(String(e.servings))}" aria-label="Servings"><span class="sub" style="align-self:center">servings</span>`;
+  const body=openDlg(title, `<div class="sub" style="margin-bottom:6px">${snack?"Snack":"Recipe"} · ${DAYS_LONG[e.day]}</div>
+    <label class="sub">How much?</label>
+    <div class="row" style="display:flex;gap:8px;margin:4px 0 10px">${ctl}</div>
+    <div class="sub" id="peM"></div>
+    <div style="display:flex;gap:8px;margin-top:16px"><button class="btn danger" id="peRm">Remove</button><span class="grow"></span><button class="btn" id="peOk">Save</button></div>`);
+  const q=body.querySelector("#peQ"), u=body.querySelector("#peU"), m=body.querySelector("#peM");
+  const draft=()=>{ const n=parseQty(q.value); const t={...e};
+    if(snack){ t.qty = n>0 ? q.value.trim() : "1"; t.unit=u.value; } else t.servings = n>0 ? n : 1; return t; };
+  const show=()=>{ m.textContent = short(entryMacros(draft())); };
+  q.oninput=show; if(u) u.onchange=show; show();
+  body.querySelector("#peOk").onclick=()=>{ Object.assign(e, draft()); save(); $("#dlg").close(); rerender(); };
+  body.querySelector("#peRm").onclick=()=>{ db.plan.entries=db.plan.entries.filter(z=>z!==e); save(); $("#dlg").close(); rerender(); toast("Removed"); };
 }
 /* ---------- Favorites (★ on an ingredient or recipe) and recent picks ---------- */
 function noteRecent(q){ const P=db.plan; const k=JSON.stringify([q.kind,q.id,q.qty,q.unit||""]);
@@ -1247,7 +1269,7 @@ function itemRow(it,i){
   const name=obj?(isRec?esc(obj.name):ingHtml(obj)):"<i>(deleted)</i>";
   let list = isRec ? ["serving","batch","g","oz","lb"] : unitsFor(obj);
   if(!list.includes(it.unit)) list=[it.unit, ...list];
-  return `<div class="line" data-i="${i}"><div class="grow"><div>${name}${isRec?`<span class="tag">recipe</span>`:""}</div>
+  return `<div class="line wrap" data-i="${i}"><div class="grow"><div>${name}${isRec?`<span class="tag">recipe</span>`:""}</div>
     <div class="sub"></div></div>
     <input class="qty" inputmode="text" value="${esc(it.qty)}" aria-label="Quantity">
     <select class="unit" aria-label="Unit">${unitOptions(list, it.unit)}</select>
