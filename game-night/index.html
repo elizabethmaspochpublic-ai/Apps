@@ -3009,8 +3009,10 @@ game({
       if (hidden) handEl.append(h('span', { class: 'hide' }, 'Hand hidden'));
       else {
         sortHand(turn);
-        hands[turn].forEach(c => handEl.append(Cards.el(c, { sel: askRank === c.r, onclick: done || busy ? null : () => { askRank = askRank === c.r ? null : c.r; render(); } })));
-        if (askRank && !done) {
+        hands[turn].forEach(c => handEl.append(Cards.el(c, { sel: waitEnd ? c === fished : askRank === c.r, onclick: done || busy || waitEnd ? null : () => { askRank = askRank === c.r ? null : c.r; render(); } })));
+        if (waitEnd && !done) {
+          askEl.append(h('span', { style: { fontWeight: 800, alignSelf: 'center' } }, fished && hands[turn].includes(fished) ? 'The card you drew is raised.' : 'Your turn is over.'), h('button', { class: 'btn primary', onclick: () => { waitEnd = false; fished = null; nextTurn(); } }, 'End turn'));
+        } else if (askRank && !done) {
           askEl.append(h('span', { style: { fontWeight: 800, alignSelf: 'center' } }, `Ask for ${Cards.PLURAL[askRank]}:`));
           P.forEach((p, i) => { if (i !== turn) askEl.append(h('button', { class: 'btn', style: { borderColor: p.color }, onclick: () => ask(i), disabled: busy }, p.name)); });
         } else if (!done && hands[turn].length) askEl.append(h('span', { class: 'muted', style: { fontWeight: 700 } }, 'Tap a card to choose which rank to ask for.'));
@@ -3027,6 +3029,7 @@ game({
       return true;
     }
     function refillIfEmpty(i) { if (!hands[i].length && deck.length) hands[i].push(deck.pop()); }
+    let waitEnd = false, fished = null; // a person sees what happened and ends the turn themselves
     async function ask(target) {
       if (busy) return; busy = true;
       const r = askRank; askRank = null;
@@ -3041,7 +3044,7 @@ game({
       } else {
         log = `${me} asked ${them} for ${Cards.PLURAL[r]}. <b>Go fish!</b>`;
         if (deck.length) {
-          const c = deck.pop(); hands[turn].push(c);
+          const c = deck.pop(); hands[turn].push(c); fished = c;
           if (c.r === r) { log += ` ${me} fished up the ${Cards.label(c)} and goes again.`; again = true; }
           else log += ' ' + me + ' drew a card.';
         }
@@ -3051,7 +3054,8 @@ game({
       refillIfEmpty(turn);
       busy = false;
       if (checkEnd()) return;
-      if (again && hands[turn].length) { render(); kick(); return; }
+      if (again && hands[turn].length) { fished = null; render(); kick(); return; }
+      if (!P[turn].cpu) { waitEnd = true; render(); return; }
       nextTurn();
     }
     const kick = () => api.turnOf(P[turn], aiAsk, 900);
@@ -3098,7 +3102,7 @@ game({
     const removed = deck.findIndex(c => c.r === 12 && c.s === 3); deck.splice(removed, 1); // remove queen of clubs
     let hands = P.map(() => []);
     deck.forEach((c, i) => hands[i % n].push(c));
-    let turn = 0, hidden = true, done = false, log = 'Pairs were put down automatically.', picked = null;
+    let waitEnd = -1, turn = 0, hidden = true, done = false, log = 'Pairs were put down automatically.', picked = null;
     const discardPairs = i => { let made = 0; for (let r = 1; r <= 13; r++) { let cs = hands[i].filter(c => c.r === r); while (cs.length >= 2) { const [a, b] = cs; hands[i] = hands[i].filter(c => c !== a && c !== b); cs = cs.slice(2); made++; } } return made; };
     P.forEach((_, i) => { discardPairs(i); shuffle(hands[i]); });
     const active = i => hands[i].length > 0;
@@ -3112,9 +3116,10 @@ game({
       P.forEach((p, i) => seatsEl.append(Cards.seat(p, [active(i) ? `${hands[i].length} cards` : 'Safe'], { cur: i === turn, out: !active(i) })));
       felt.innerHTML = '';
       const from = nextActive(turn);
-      if (!done && !hidden && from >= 0) {
+      if (!done && !hidden && (picked || from >= 0)) {
         felt.append(h('div', { style: { fontWeight: 800 } }, picked ? 'You took:' : `Take a card from ${P[from].name}`));
-        if (picked) felt.append(h('div', { class: 'om-from' }, Cards.el(picked)));
+        if (picked) felt.append(h('div', { class: 'om-from' }, Cards.el(picked)), h('div', { style: { fontWeight: 700 } }, hands[turn].includes(picked) ? 'No pair. It goes into your hand.' : 'It made a pair, so both cards are put down.'));
+        if (picked && waitEnd >= 0) felt.append(h('button', { class: 'btn wood', style: { marginTop: '6px' }, onclick: () => finishTake(waitEnd) }, 'End turn'));
         else felt.append(h('div', { class: 'om-from' }, hands[from].map((c, k) => Cards.el(null, { label: 'Card ' + (k + 1) + ' of ' + P[from].name, onclick: () => take(from, k) }))));
       } else felt.append(h('div', { style: { fontWeight: 800, opacity: .85 } }, done ? 'Game over' : 'Waiting for the next player'));
       logEl.textContent = log;
@@ -3129,10 +3134,14 @@ game({
       hands[turn].push(c); picked = c;
       const paired = discardPairs(turn);
       log = `${P[turn].name} took a card from ${P[from].name}` + (paired ? ' and made a pair.' : '.');
+      if (!P[turn].cpu) { waitEnd = from; render(); return; } // the person looks, then taps End turn
       render();
       await new Promise(r => setTimeout(r, 1100));
       if (!api.alive()) return;
-      picked = null;
+      finishTake(from);
+    }
+    async function finishTake(from) {
+      waitEnd = -1; picked = null;
       shuffle(hands[turn]);
       const left = P.map((_, i) => i).filter(active);
       if (left.length <= 1) {
@@ -3260,6 +3269,10 @@ game({
       advance(steps);
     }
     async function advance(steps) {
+      if (steps === 2) { // a person who gets skipped is told so and ends the turn themselves
+        const sk = nextIdx(), how = /draws (\d)/.exec(log);
+        if (!P[sk].cpu) { await api.modal({ title: `${P[sk].name} is skipped`, body: `<p>${how ? `${P[turn].name} played a draw ${how[1]}, so you take ${how[1]} cards and miss this turn.` : `${P[turn].name}'s card skips you, so you miss this turn.`}</p>`, dismissable: false, actions: [{ label: 'End turn', value: true, primary: true }] }); if (!api.alive()) return; }
+      }
       turn = nextIdx(steps); drawn = null; hidden = true; render();
       await api.pass(P[turn], log);
       if (!api.alive()) return;
@@ -3530,11 +3543,13 @@ game({
       if (out.t === 'skip') { const others = P.map((_, i) => i).filter(i => i !== me); target = others.sort((a, b) => phase[b] - phase[a] || hands[a].length - hands[b].length)[0]; }
       sel = new Set([out]); discardSel(target);
     }
+    // a person who gets skipped is told so and ends the turn themselves
+    const skipNotice = i => P[i].cpu ? Promise.resolve(true) : api.modal({ title: `${P[i].name} is skipped`, body: '<p>A Skip card was played on you, so you miss this turn.</p>', dismissable: false, actions: [{ label: 'End turn', value: true, primary: true }] });
     async function nextTurn() {
       slots = slots.map(() => []);
       for (let k = 0; k < n; k++) {
         turn = (turn + 1) % n;
-        if (skipNext[turn]) { skipNext[turn] = false; log += ` ${P[turn].name} is skipped.`; continue; }
+        if (skipNext[turn]) { skipNext[turn] = false; log += ` ${P[turn].name} is skipped.`; await skipNotice(turn); if (!api.alive()) return; continue; }
         break;
       }
       step = 'draw'; sel.clear(); slots = PH[phase[turn]].map(() => []); hidden = true; render();
@@ -3560,11 +3575,11 @@ game({
       newHand(); render();
       await api.pass(P[turn], log + (skipNext[turn] ? ' The first card is a Skip.' : ''));
       if (!api.alive()) return;
-      if (skipNext[turn]) { skipNext[turn] = false; return nextTurn(); }
+      if (skipNext[turn]) { skipNext[turn] = false; await skipNotice(turn); if (!api.alive()) return; return nextTurn(); }
       hidden = !!P[turn].cpu; render(); kick();
     }
     newHand();
-    (async () => { render(); await api.pass(P[turn], 'Everyone else, look away from the screen.'); if (!api.alive()) return; if (skipNext[turn]) { skipNext[turn] = false; log += ` ${P[turn].name} is skipped by the first card.`; return nextTurn(); } hidden = !!P[turn].cpu; render(); kick(); })();
+    (async () => { render(); await api.pass(P[turn], 'Everyone else, look away from the screen.'); if (!api.alive()) return; if (skipNext[turn]) { skipNext[turn] = false; log += ` ${P[turn].name} is skipped by the first card.`; await skipNotice(turn); if (!api.alive()) return; return nextTurn(); } hidden = !!P[turn].cpu; render(); kick(); })();
   }
 });
 /* ---------- Poker (Texas Hold'em) ---------- */
