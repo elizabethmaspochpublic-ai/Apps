@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="Macros">
 <meta name="theme-color" content="#f6f5f2">
 <link rel="manifest" href="manifest.json">
+<script>try{ if(JSON.parse(localStorage.getItem("macro-kitchen-v1-pref")||"{}").theme==="dark"){ document.documentElement.dataset.theme="dark"; } }catch(e){}</script>
 <link rel="apple-touch-icon" href="icon-180.png">
 <style>
 :root{
@@ -19,13 +20,12 @@
   --kcal:#c2410c; --p:#2563eb; --c:#a16207; --f:#9333ea;
   --cp:#2563eb; --cc:#a16207; --cf:#9333ea; --grid:#e8e6e1;
 }
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
+/* Dark mode is opt-in (Settings > Appearance); light is the default. */
+:root[data-theme="dark"]{ color-scheme:dark;
     --bg:#111113; --card:#1c1c1f; --text:#f2f2f4; --muted:#9a9aa0; --line:#2e2e33; --track:#2a2a2f;
     --accent:#4fb588; --accent-ink:#0b1a13; --danger:#ef6b5b; --chip:#1f2a24; --warn:#f59e0b;
     --kcal:#fb923c; --p:#60a5fa; --c:#facc15; --f:#c084fc;
     --cp:#3b82f6; --cc:#c27c0e; --cf:#a855f7; --grid:#2c2c31;
-  }
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);
@@ -151,7 +151,7 @@ pre.ocr{white-space:pre-wrap;font-size:12px;background:var(--card);border:1px so
   <button data-tab="ingredients"><span class="ico">🥕</span>Ingredients</button>
   <button data-tab="progress"><span class="ico">📈</span>Progress</button>
   <button data-tab="grocery"><span class="ico">🛒</span>Groceries</button>
-  <button data-tab="settings"><span class="ico">💾</span>Backup</button>
+  <button data-tab="settings"><span class="ico">⚙️</span>Settings</button>
 </nav>
 
 <dialog id="picker"><div class="dh"><b>Add to recipe</b><button class="btn ghost" data-close>Close</button></div>
@@ -307,7 +307,7 @@ async function doExport(){
   toast("Backup saved"); return true;
 }
 function pickRestore(after){
-  const inp=document.createElement("input"); inp.type="file"; inp.accept="application/json,.json";
+  const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json,text/plain";
   inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return;
     try{ const d=JSON.parse(await f.text());
       if(!Array.isArray(d.ingredients)||!Array.isArray(d.recipes)) throw new Error("bad");
@@ -685,9 +685,13 @@ function weekMacroChart(){
     bind:()=>main.querySelectorAll("#wkc [data-bar]").forEach(r=>r.onclick=()=>{ const i=+r.dataset.bar, d=days[i];
       $("#wkTip").textContent=`${DAYS_LONG[i]}: ${fmt(d.kcal)} kcal · P ${fmt(d.protein)} g · C ${fmt(d.carbs)} g · F ${fmt(d.fat)} g${goal?` · ${fmt(d.kcal/goal*100)}% of goal`:""}`; })};
 }
-function weightChart(){
-  const ws=db.body.weights, u=db.body.unit; if(ws.length<2) return {html:`<p class="sub">${ws.length?"Log one more weigh-in to see your chart.":"No weigh-ins yet."}</p>`, bind:()=>{}};
-  const t0=parseISO(ws[0].d).getTime(), t1=parseISO(ws[ws.length-1].d).getTime(), span=Math.max(t1-t0,864e5);
+const RANGES=[[7,"1W"],[30,"1M"],[91,"3M"],[182,"6M"],[365,"1Y"]];
+const rangeDays=()=>RANGES.some(r=>r[0]===pref.range)?pref.range:7;
+function weightChart(n){
+  const end=new Date(), start=new Date(end.getFullYear(),end.getMonth(),end.getDate()-(n-1)), startISO=isoDay(start);
+  const ws=db.body.weights.filter(w=>w.d>=startISO), u=db.body.unit;
+  if(!ws.length) return {html:`<p class="sub">${db.body.weights.length?"No weigh-ins in this range. Try a longer range.":"No weigh-ins yet."}</p>`, bind:()=>{}};
+  const t0=start.getTime(), t1=new Date(end.getFullYear(),end.getMonth(),end.getDate()).getTime(), span=Math.max(t1-t0,864e5);
   const lo=Math.min(...ws.map(w=>w.w)), hi=Math.max(...ws.map(w=>w.w)), pad=Math.max((hi-lo)*0.15,1), mn=lo-pad, mx=hi+pad;
   const W=340,H=170,L=38,B=20,T=10,R=8, x=d=>L+(W-L-R)*((parseISO(d).getTime()-t0)/span), y=v=>T+(H-T-B)*(1-(v-mn)/(mx-mn));
   const ticks=[mn+pad, (mn+mx)/2, mx-pad];
@@ -695,9 +699,9 @@ function weightChart(){
   ticks.forEach(t=>{ svg+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L-6}" y="${y(t)+4}" text-anchor="end" font-size="10" fill="var(--muted)">${fmt(t,1)}</text>`; });
   svg+=`<polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${ws.map(w=>`${x(w.d).toFixed(1)},${y(w.w).toFixed(1)}`).join(" ")}"/>`;
   ws.forEach((w,i)=>{ svg+=`<circle cx="${x(w.d)}" cy="${y(w.w)}" r="4" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/><circle cx="${x(w.d)}" cy="${y(w.w)}" r="14" fill="transparent" data-pt="${i}" style="cursor:pointer"/>`; });
-  svg+=`<text x="${L}" y="${H-4}" font-size="10" fill="var(--muted)">${niceDate(ws[0].d)}</text><text x="${W-R}" y="${H-4}" text-anchor="end" font-size="10" fill="var(--muted)">${niceDate(ws[ws.length-1].d)}</text></svg>`;
+  svg+=`<text x="${L}" y="${H-4}" font-size="10" fill="var(--muted)">${niceDate(startISO)}</text><text x="${W-R}" y="${H-4}" text-anchor="end" font-size="10" fill="var(--muted)">Today</text></svg>`;
   const ch=ws[ws.length-1].w-ws[0].w;
-  return {html:`<div class="chart" id="wtc">${svg}<div class="tip" id="wtTip">${ch===0?"No change":`${ch>0?"+":""}${fmt(ch,1)} ${u}`} since ${niceDate(ws[0].d)}. Tap a point for details.</div></div>`,
+  return {html:`<div class="chart" id="wtc">${svg}<div class="tip" id="wtTip">${ws.length<2?`${fmt(ws[0].w,1)} ${u} on ${niceDate(ws[0].d)}.`:`${ch===0?"No change":`${ch>0?"+":""}${fmt(ch,1)} ${u}`} since ${niceDate(ws[0].d)}.`} Tap a point for details.</div></div>`,
     bind:()=>main.querySelectorAll("#wtc [data-pt]").forEach(c=>c.onclick=()=>{ const w=ws[+c.dataset.pt]; $("#wtTip").textContent=`${parseISO(w.d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}: ${fmt(w.w,1)} ${u}`; })};
 }
 // Weight, calories and exercise on one shared timeline: three stacked panels, same dates, each with its own scale.
@@ -715,7 +719,7 @@ function trendsChart(n){
   } else svg+=`<text x="${(L+W)/2}" y="${H1/2}" text-anchor="middle" font-size="12" fill="var(--muted)">No weigh-ins in this period</text>`;
   svg+=`<text x="0" y="10" font-size="11" font-weight="600" fill="var(--text)">Weight (${u})</text>`;
   // panel 2: calories
-  const y2=H1+12, H2=58, kmax=Math.max(goal,...kc.filter(v=>v!=null),1)*1.1, ky=v=>y2+12+(H2-12)*(1-v/kmax), bw=Math.max(2,cw-2);
+  const y2=H1+12, H2=58, kmax=Math.max(goal,...kc.filter(v=>v!=null),1)*1.1, ky=v=>y2+12+(H2-12)*(1-v/kmax), bw=cw>3?cw-2:cw;
   svg+=`<text x="0" y="${y2+8}" font-size="11" font-weight="600" fill="var(--text)">Planned calories</text>`;
   kc.forEach((v,i)=>{ if(v!=null){ const top=ky(v), base=y2+H2; svg+=`<rect x="${xc(i)-bw/2}" y="${top}" width="${bw}" height="${base-top}" rx="${Math.min(2,bw/2)}" fill="var(--kcal)" opacity=".85"/>`; } });
   svg+=`<line x1="${L}" x2="${W-R}" y1="${y2+H2}" y2="${y2+H2}" stroke="var(--grid)"/>`;
@@ -737,14 +741,15 @@ function trendsChart(n){
 function renderProgress(){
   setHeader("Progress", `<button class="btn small">⚖️ Log weight</button>`, ()=>openWeightDialog(renderProgress));
   const B=db.body, wd=weekDates(), today=isoDay();
-  const wk=weekMacroChart(), wc=weightChart(), tr=trendsChart(pref.trend||30);
+  const wk=weekMacroChart(), wc=weightChart(rangeDays()), tr=trendsChart(rangeDays());
   const recentW=B.weights.slice(-5).reverse();
   const first=B.progress[0], last=B.progress[B.progress.length-1];
   main.innerHTML=`
+    <div class="seg" id="rng">${RANGES.map(([d,l])=>`<button data-r="${d}" class="${rangeDays()===d?"on":""}">${l}</button>`).join("")}</div>
     <div class="card"><h3>Exercise this week</h3>
       <div class="dots7">${wd.map((d,i)=>`<div class="${d===today?"today":""}">${DAYS[i]}<b data-ex="${d}" style="background:${exFill(exLevel(d))};border-color:${exLevel(d)?"var(--accent)":"var(--line)"};color:${exLevel(d)>2?"var(--accent-ink)":"var(--text)"};font-size:12px" aria-label="${DAYS_LONG[i]}: ${EX[exLevel(d)]}">${exLevel(d)?EX[exLevel(d)][0]:""}</b></div>`).join("")}</div>
       <p class="hint">${wd.filter(exercised).length} of 7 days. Tap a day to change its intensity (W warmup, M moderate, I intense, B beast mode).</p></div>
-    <div class="card"><h3><span class="grow">Weight vs calories &amp; exercise</span><span class="seg" id="trR" style="margin:0;padding:2px">${[30,90].map(r=>`<button data-r="${r}" class="${(pref.trend||30)===r?"on":""}" style="padding:2px 8px">${r}d</button>`).join("")}</span></h3>${tr.html}</div>
+    <div class="card"><h3><span class="grow">Weight vs calories &amp; exercise</span></h3>${tr.html}</div>
     <div class="card"><h3>Planned week: calories by macro</h3>${wk.html}</div>
     <div class="card"><h3><span class="grow">Weight</span><span class="seg" id="wu" style="margin:0;padding:2px">${["lb","kg"].map(x=>`<button data-u="${x}" class="${B.unit===x?"on":""}" style="padding:2px 10px">${x}</button>`).join("")}</span></h3>
       ${wc.html}
@@ -759,7 +764,7 @@ function renderProgress(){
         <div class="thumbs">${e.photos.map(id=>`<img data-ph="${id}" data-pview="${e.id}|${id}" alt="Progress photo">`).join("")}</div>`).join("")}</div>`:""}`;
   hydratePhotos(main); wk.bind(); wc.bind(); tr.bind();
   main.querySelectorAll("[data-ex]").forEach(b=>b.onclick=()=>{ setEx(b.dataset.ex, (exLevel(b.dataset.ex)+1)%5); renderProgress(); });
-  main.querySelectorAll("#trR button").forEach(b=>b.onclick=()=>{ pref.trend=+b.dataset.r; savePref(); renderProgress(); });
+  main.querySelectorAll("#rng button").forEach(b=>b.onclick=()=>{ pref.range=+b.dataset.r; savePref(); renderProgress(); });
   main.querySelectorAll("#wu button").forEach(b=>b.onclick=()=>{ const nu=b.dataset.u; if(nu===B.unit) return;
     if(B.weights.length && confirm(`Convert your logged weights to ${nu}?`)) B.weights.forEach(w=>w.w=+(nu==="kg"?w.w*0.45359237:w.w/0.45359237).toFixed(1));
     B.unit=nu; save(); renderProgress(); });
@@ -1078,7 +1083,7 @@ async function scanLabel(file){
   try{
     let img;
     try{ img=await prepImage(file); }
-    catch(e){ status("This browser can't open that picture format. iPhone photos are often HEIC: on a computer, use Safari or save the photo as JPEG or PNG first."); return; }
+    catch(e){ status("This browser can't open that picture format. iPhone photos are often HEIC: save the photo as JPEG or PNG first, or take it with the camera from inside the app."); return; }
     let w;
     try{ w=await getWorker(status); }
     catch(e){ console.error(e); ocrWorker=null; status("The label reader couldn't start in this browser ("+(e&&e.message||e)+")."); return; }
@@ -1256,20 +1261,25 @@ document.querySelectorAll("#pickSeg button").forEach(b=>b.onclick=()=>{ pick.kin
 /* =========================================================
    Backup
    ========================================================= */
+function setTheme(t){ pref.theme=t; savePref(); if(t==="dark") document.documentElement.dataset.theme="dark"; else delete document.documentElement.dataset.theme;
+  const m=document.querySelector('meta[name="theme-color"]'); if(m) m.content = t==="dark" ? "#111113" : "#f6f5f2"; }
 function renderSettings(){
-  setHeader("Backup");
-  const last=getNum("-backup");
-  main.innerHTML=`<div class="card"><h3>Your data</h3>
+  setHeader("Settings");
+  const last=getNum("-backup"), dark=pref.theme==="dark";
+  main.innerHTML=`<div class="card"><h3>Appearance</h3>
+    <div class="seg" id="thm" style="margin:0"><button data-t="light" class="${dark?"":"on"}">☀️ Light</button><button data-t="dark" class="${dark?"on":""}">🌙 Dark</button></div></div>
+    <div class="card"><h3>Your data</h3>
     <p>${db.ingredients.length} ingredients · ${db.recipes.length} recipes · ${db.plan.entries.length} planned meals.</p>
     <p class="sub">Last backup: <b>${last?new Date(last).toLocaleString():"never"}</b></p>
     <div class="actions" style="justify-content:flex-start">
       <button class="btn" id="exp">Back up now</button><button class="btn ghost" id="imp">Restore from backup</button></div>
-    <p class="hint">Back up saves a file. In the share sheet choose <b>Save to Files</b> and pick <b>iCloud Drive</b>. Restore replaces what is on this device.</p></div>
+    <p class="hint">Back up saves a file. On iPhone choose <b>Save to Files</b> then <b>iCloud Drive</b>; on Android save it to <b>Google Drive</b> or Downloads. Restore replaces what is on this device.</p></div>
     <div class="card"><h3>What keeps your data safe</h3>
     <p class="sub" style="margin:0 0 6px">✅ <b>App updates never erase your data.</b> New versions arrive by themselves the next time you open the app online. You don't need to download anything again.</p>
-    <p class="sub" style="margin:0 0 6px">⚠️ <b>Deleting the home-screen icon deletes the data</b> stored in it (that's how iPhone and iPad work). Back up first, then use Restore after re-adding it.</p>
-    <p class="sub" style="margin:0">ℹ️ The app on your home screen and the same page open in Safari keep separate data. Use the home-screen app.</p>
+    <p class="sub" style="margin:0 0 6px">⚠️ <b>Deleting the home-screen icon deletes the data</b> stored in it (that's how phones handle home-screen web apps). Back up first, then use Restore after re-adding it.</p>
+    <p class="sub" style="margin:0">ℹ️ The app on your home screen and the same page open in the browser keep separate data. Use the home-screen app.</p>
     <p class="hint" id="pst"></p></div>`;
+  main.querySelectorAll("#thm button").forEach(b=>b.onclick=()=>{ setTheme(b.dataset.t); renderSettings(); });
   $("#exp").onclick=async()=>{ if(await doExport()) renderSettings(); };
   $("#imp").onclick=()=>pickRestore();
   if(navigator.storage&&navigator.storage.persisted) navigator.storage.persisted().then(p=>{ const el=$("#pst"); if(el) el.textContent=p?"Storage is marked as protected on this device.":""; }).catch(()=>{});
