@@ -229,7 +229,7 @@ function migrate(d){
   for(const r of d.recipes) for(const it of r.items){ if(!it.unit) it.unit = it.kind==="ing"?"g":"serving"; }
   if(!d.plan) d.plan={};
   d.plan.goals = Object.assign({kcal:2000,protein:120,carbs:225,fat:65}, d.plan.goals||{});
-  d.plan.entries = d.plan.entries||[]; d.plan.have=d.plan.have||{}; d.plan.extra=d.plan.extra||[];
+  d.plan.entries = d.plan.entries||[]; d.plan.have=d.plan.have||{}; d.plan.extra=d.plan.extra||[]; d.plan.saved=d.plan.saved||[]; d.plan.recent=d.plan.recent||[];
   return d;
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(db)); localStorage.setItem(KEY+"-changed", Date.now()); }catch(e){ toast("Could not save on this device"); } }
@@ -354,7 +354,8 @@ function render(){
 const byName=(a,b)=>a.name.localeCompare(b.name) || (a.brand||"").localeCompare(b.brand||"");
 // Ingredient label with optional brand: "Peanut butter · Jif"
 const ingLabel=x=>x.brand ? `${x.name} · ${x.brand}` : x.name;
-const ingHtml=x=>`${esc(x.name)}${x.brand?` <span class="brand">${esc(x.brand)}</span>`:""}`;
+const favFirst=(a,b)=>(b.fav?1:0)-(a.fav?1:0) || byName(a,b);
+const ingHtml=x=>`${x.fav?"★ ":""}${esc(x.name)}${x.brand?` <span class="brand">${esc(x.brand)}</span>`:""}`;
 const ingMatch=(x,q)=>(x.name+" "+(x.brand||"")).toLowerCase().includes(q);
 function liveSearch(id, key, rerender){
   const qi=$(id); qi.oninput=()=>{ query[key]=qi.value; const p=qi.selectionStart; rerender(); const n=$(id); n.focus(); n.setSelectionRange(p,p); };
@@ -399,11 +400,16 @@ function renderHome(){
     <div class="card"><h3><span class="grow">${week?"This week vs weekly goal":DAYS_LONG[pref.day]+" vs daily goal"}</span><button class="btn ghost small" id="goals">Edit goals</button></h3>
       <div class="gauges">${gauges}</div></div>
     <div class="convbar"><button class="btn soft" id="conv">⇄ Conversion calculator</button><button class="btn soft" id="toGroc">🛒 Grocery list</button></div>
-    <div class="card"><h3><span class="grow">${week?"Planned this week":"Meals &amp; snacks"}</span>${P.entries.length?`<button class="btn danger small" id="clr">Clear week</button>`:""}</h3>${planHtml}</div>`;
+    <div class="card"><h3><span class="grow">${week?"Planned this week":"Meals &amp; snacks"}</span></h3>${planHtml}
+      <div class="chips" style="margin:10px 0 0">${!week&&P.entries.some(e=>e.day===pref.day)?`<button id="cpd">⧉ Copy ${DAYS[pref.day]} to…</button>`:""}${P.saved.length?`<button id="cpl">↺ Copy last week</button>`:""}${P.entries.length?`<button id="nwk">＋ Start new week</button>`:""}<button id="svw">📁 Saved weeks</button></div></div>`;
   main.querySelectorAll("#mode button").forEach(b=>b.onclick=()=>{ pref.homeMode=b.dataset.m; savePref(); renderHome(); });
   main.querySelectorAll("#days button").forEach(b=>b.onclick=()=>{ pref.day=+b.dataset.d; renderHome(); });
   $("#goals").onclick=openGoals; $("#conv").onclick=()=>openConverter(); $("#toGroc").onclick=()=>go({tab:"grocery"});
-  if($("#clr")) $("#clr").onclick=()=>{ if(confirm("Remove all planned meals for the week?")){ P.entries=[]; P.have={}; save(); renderHome(); } };
+  if($("#cpd")) $("#cpd").onclick=()=>openCopyDay(pref.day);
+  if($("#cpl")) $("#cpl").onclick=()=>loadWeek(P.saved.find(w=>w.auto)||P.saved[0]);
+  if($("#nwk")) $("#nwk").onclick=()=>{ if(!confirm("Start a new week? This week is kept under Saved weeks, so you can copy it back any time.")) return;
+    saveWeek(); P.entries=[]; P.have={}; P.extra=P.extra.filter(e=>!e.have); save(); toast("New week started"); renderHome(); };
+  $("#svw").onclick=openSavedWeeks;
   bindPlanRows(renderHome); bindBackupBits();
 }
 function planRow(e){
@@ -428,6 +434,20 @@ function bindPlanRows(rerender){
     l.querySelector(".prm").onclick=()=>{ db.plan.entries=db.plan.entries.filter(z=>z!==e); save(); rerender(); };
   });
 }
+/* ---------- Favorites (★ on an ingredient or recipe) and recent picks ---------- */
+function noteRecent(q){ const P=db.plan; const k=JSON.stringify([q.kind,q.id,q.qty,q.unit||""]);
+  P.recent=[q, ...P.recent.filter(r=>JSON.stringify([r.kind,r.id,r.qty,r.unit||""])!==k)].slice(0,10); }
+function quickChips(kind){
+  const P=db.plan, get=id=>kind==="rec"?rec(id):ing(id);
+  const label=(o,q)=>kind==="rec" ? `${esc(o.name)}${q&&q.qty!=="1"?` ×${esc(q.qty)}`:""}` : `${esc(ingLabel(o))}${q?` · ${esc(q.qty)} ${esc(unitLabel(q.unit,parseQty(q.qty)))}`:""}`;
+  const favs=(kind==="rec"?db.recipes:db.ingredients).filter(o=>o.fav).sort(byName).map(o=>{ const q=kind==="rec"?{kind,id:o.id,qty:"1"}:{kind,id:o.id,qty:o.serving.qty,unit:o.serving.unit};
+    return `<button data-qk='${esc(JSON.stringify(q))}'>★ ${label(o, kind==="ing"?q:null)}</button>`; });
+  const rec_=P.recent.filter(q=>q.kind===kind&&get(q.id)).slice(0,6).map(q=>`<button data-qk='${esc(JSON.stringify(q))}'>↺ ${label(get(q.id),q)}</button>`);
+  if(!favs.length&&!rec_.length) return "";
+  return `${favs.length?`<span class="sub">Favorites</span><div class="chips">${favs.join("")}</div>`:""}${rec_.length?`<span class="sub">Recent</span><div class="chips">${rec_.join("")}</div>`:""}`;
+}
+function favBtn(o){ return `<button class="btn ghost small" id="fav" aria-pressed="${!!o.fav}">${o.fav?"★ Favorite":"☆ Favorite"}</button>`; }
+function bindFav(o, rerender){ const b=$("#fav"); if(b) b.onclick=()=>{ o.fav=!o.fav||undefined; save(); rerender(); }; }
 function openPlanDialog(recipeId, mode, ingId){
   if(!db.recipes.length && !db.ingredients.length) return toast("Add an ingredient or recipe first");
   mode = mode || (recipeId ? "rec" : (db.recipes.length ? "rec" : "ing"));
@@ -436,9 +456,11 @@ function openPlanDialog(recipeId, mode, ingId){
   const body=openDlg("Add food", `
     <div class="seg" id="pm"><button data-m="rec" class="${mode==="rec"?"on":""}">Recipe</button><button data-m="ing" class="${mode==="ing"?"on":""}">Snack (ingredient)</button></div>
     <div id="pmRec" ${mode==="rec"?"":"hidden"}>
+      ${quickChips("rec")}
       ${recs.length?`<label class="f"><span>Recipe</span><select id="pr">${recs.map(r=>`<option value="${r.id}" ${r.id===recipeId?"selected":""}>${esc(r.name)}</option>`).join("")}</select></label>
       <label class="f"><span>Servings you'll eat (each day)</span><input id="ps" inputmode="decimal" value="1"></label>`:`<p class="empty" style="padding:8px">No recipes yet.</p>`}</div>
     <div id="pmIng" ${mode==="ing"?"":"hidden"}>
+      ${quickChips("ing")}
       ${ings.length?`<label class="f"><span>Ingredient</span><select id="pi">${ings.map(x=>`<option value="${x.id}" ${x.id===ingId?"selected":""}>${esc(ingLabel(x))}</option>`).join("")}</select></label>
       <span class="sub">Amount (each day)</span><div class="grid2" style="grid-template-columns:1fr 1.2fr;margin:4px 0 12px"><input id="pq" inputmode="text"><select id="pu"></select></div>`:`<p class="empty" style="padding:8px">No ingredients yet.</p>`}</div>
     <span class="sub">Which days</span>
@@ -459,6 +481,10 @@ function openPlanDialog(recipeId, mode, ingId){
   body.querySelectorAll("#pd button").forEach(b=>b.onclick=()=>{ const d=+b.dataset.d; sel.has(d)?sel.delete(d):sel.add(d); paint(); });
   body.querySelectorAll("#pdq button").forEach(b=>b.onclick=()=>{ sel.clear(); if(b.dataset.q==="all") DAYS.forEach((_,i)=>sel.add(i)); if(b.dataset.q==="wk") [0,1,2,3,4].forEach(i=>sel.add(i)); paint(); });
   if(recs.length){ $("#pr").onchange=info; $("#ps").oninput=info; }
+  body.querySelectorAll("[data-qk]").forEach(b=>b.onclick=()=>{ const q=JSON.parse(b.dataset.qk);
+    if(q.kind==="rec"){ $("#pr").value=q.id; $("#ps").value=q.qty; }
+    else { $("#pi").value=q.id; setIngDefaults(); $("#pq").value=q.qty; if([...$("#pu").options].some(o=>o.value===q.unit)) $("#pu").value=q.unit; }
+    body.querySelectorAll("[data-qk]").forEach(z=>z.classList.toggle("on", z===b)); info(); });
   if(ings.length){ $("#pi").onchange=setIngDefaults; $("#pq").oninput=info; $("#pu").onchange=info; setIngDefaults(); }
   info();
   $("#padd").onclick=()=>{
@@ -466,12 +492,54 @@ function openPlanDialog(recipeId, mode, ingId){
     const days=[...sel].sort();
     if(mode==="rec"){ if(!recs.length) return $("#perr").textContent="Make a recipe first.";
       const n=parseQty($("#ps").value); if(!(n>0)) return $("#perr").textContent="Enter how many servings.";
-      days.forEach(d=>db.plan.entries.push({id:uid(), recipeId:$("#pr").value, servings:n, day:d})); }
+      days.forEach(d=>db.plan.entries.push({id:uid(), recipeId:$("#pr").value, servings:n, day:d}));
+      noteRecent({kind:"rec", id:$("#pr").value, qty:String(n)}); }
     else { if(!ings.length) return $("#perr").textContent="Add an ingredient first.";
       const q=$("#pq").value.trim(); if(!(parseQty(q)>0)) return $("#perr").textContent="Enter an amount, like 30 or 1/2.";
-      days.forEach(d=>db.plan.entries.push({id:uid(), kind:"ing", ingId:$("#pi").value, qty:q, unit:$("#pu").value, day:d})); }
+      days.forEach(d=>db.plan.entries.push({id:uid(), kind:"ing", ingId:$("#pi").value, qty:q, unit:$("#pu").value, day:d}));
+      noteRecent({kind:"ing", id:$("#pi").value, qty:q, unit:$("#pu").value}); }
     save(); $("#dlg").close(); toast("Added"); if(route.tab==="home") renderHome();
   };
+}
+/* ---------- Weeks: keep past weeks so they can be copied back ---------- */
+const cloneEntries=es=>es.map(e=>({...e, id:uid()}));
+function saveWeek(name){
+  const P=db.plan; if(!P.entries.length) return;
+  P.saved.unshift({id:uid(), name: name || "Week saved "+new Date().toLocaleDateString(undefined,{month:"short",day:"numeric"}), date:Date.now(), auto:!name, entries:cloneEntries(P.entries)});
+  P.saved=P.saved.slice(0,12);
+}
+function loadWeek(w){
+  const P=db.plan; if(!w) return;
+  if(P.entries.length && !confirm(`Replace this week's plan with "${w.name}"?`)) return;
+  P.entries=cloneEntries(w.entries).filter(e=>isSnack(e)?ing(e.ingId):rec(e.recipeId)); P.have={}; save();
+  if($("#dlg").open) $("#dlg").close(); toast(`Copied "${w.name}"`); renderHome();
+}
+function openSavedWeeks(){
+  const P=db.plan;
+  const body=openDlg("Saved weeks", `
+    ${P.entries.length?`<div class="actions" style="flex-wrap:nowrap;margin:0 0 12px"><input id="wn" placeholder="Name this week (e.g. Cutting week)"><button class="btn small" id="wsave">Save</button></div>`:""}
+    ${P.saved.length?`<div class="list">${P.saved.map(w=>`<div class="item"><div class="grow"><div class="name">${esc(w.name)}</div><div class="sub">${w.entries.length} item${w.entries.length===1?"":"s"} · saved ${new Date(w.date).toLocaleDateString()}</div></div>
+      <button class="btn soft small" data-load="${w.id}">Use</button><button class="btn danger small" data-wdel="${w.id}" aria-label="Delete">✕</button></div>`).join("")}</div>`
+      : `<div class="empty">No saved weeks yet. When you tap <b>Start new week</b>, the old week is saved here automatically.</div>`}
+    <p class="hint">"Use" replaces this week's plan with a copy of the saved one.</p>`);
+  if($("#wsave")) $("#wsave").onclick=()=>{ saveWeek($("#wn").value.trim()); save(); toast("Week saved"); openSavedWeeks(); };
+  body.querySelectorAll("[data-load]").forEach(b=>b.onclick=()=>loadWeek(P.saved.find(w=>w.id===b.dataset.load)));
+  body.querySelectorAll("[data-wdel]").forEach(b=>b.onclick=()=>{ if(!confirm("Delete this saved week?")) return; P.saved=P.saved.filter(w=>w.id!==b.dataset.wdel); save(); openSavedWeeks(); if(route.tab==="home") renderHome(); });
+}
+function openCopyDay(from){
+  const sel=new Set();
+  const body=openDlg(`Copy ${DAYS_LONG[from]} to…`, `
+    <div class="days" id="cdd">${DAYS.map((d,i)=>`<button data-d="${i}" ${i===from?"disabled style='opacity:.35'":""}>${d}</button>`).join("")}</div>
+    <div class="chips" id="cdq"><button data-q="all">All other days</button><button data-q="wk">Weekdays</button></div>
+    <p class="hint">Adds ${DAYS_LONG[from]}'s meals and snacks to the days you pick. Nothing already planned is removed.</p><div class="err" id="cderr"></div>
+    <div class="actions"><span></span><button class="btn" id="cdgo">Copy</button></div>`);
+  const paint=()=>body.querySelectorAll("#cdd button").forEach(b=>b.classList.toggle("on", sel.has(+b.dataset.d)));
+  body.querySelectorAll("#cdd button:not([disabled])").forEach(b=>b.onclick=()=>{ const d=+b.dataset.d; sel.has(d)?sel.delete(d):sel.add(d); paint(); });
+  body.querySelectorAll("#cdq button").forEach(b=>b.onclick=()=>{ sel.clear(); (b.dataset.q==="all"?[0,1,2,3,4,5,6]:[0,1,2,3,4]).forEach(i=>{ if(i!==from) sel.add(i); }); paint(); });
+  $("#cdgo").onclick=()=>{ if(!sel.size) return $("#cderr").textContent="Pick at least one day.";
+    const src=db.plan.entries.filter(e=>e.day===from);
+    [...sel].forEach(d=>src.forEach(e=>db.plan.entries.push({...e, id:uid(), day:d})));
+    save(); $("#dlg").close(); toast(`Copied to ${sel.size} day${sel.size===1?"":"s"}`); renderHome(); };
 }
 function openGoals(){
   const g=db.plan.goals;
@@ -591,7 +659,7 @@ async function shareGrocery(){
 function renderIngList(){
   setHeader("Ingredients", `<button class="btn small">+ New</button>`, ()=>go({tab:"ingredients",id:"new"}));
   const q=query.ingredients.toLowerCase();
-  const list=db.ingredients.filter(x=>ingMatch(x,q)).sort(byName);
+  const list=db.ingredients.filter(x=>ingMatch(x,q)).sort(favFirst);
   main.innerHTML=`<input class="search" id="q" placeholder="Search ingredients" value="${esc(query.ingredients)}" autocomplete="off">
     ${list.length?`<div class="list">${list.map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${ingHtml(x)}</div>
       <div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}${x.price?` · ${esc(priceText(x))}`:""}</div></div><span class="chev">›</span></button>`).join("")}</div>`
@@ -610,9 +678,11 @@ function renderIngEdit(){
   const pcW = x.gPerPiece && sv.unit!=="piece" ? +x.gPerPiece.toFixed(1) : "";
   const usedIn=isNew?[]:db.recipes.filter(r=>r.items.some(it=>it.kind==="ing"&&it.id===x.id));
   main.innerHTML=`
-  <div class="scanbox"><div style="display:flex;align-items:center;gap:10px"><div class="grow"><b>Scan a nutrition label</b><div class="sub">Take a photo of the label and the numbers fill in. Check them before saving.</div></div>
-    <button class="btn" id="scan">📷 Scan</button></div><input type="file" id="scanFile" accept="image/*" hidden>
-    <div id="scanStatus" class="hint"></div></div>
+  <div class="scanbox"><b>Fill in automatically</b><div class="sub">Scan the barcode to look the product up (needs internet), or take a photo of the nutrition label (works offline). Check the numbers before saving.</div>
+    <div class="actions" style="justify-content:flex-start;margin-top:8px"><button class="btn" id="scanBc">▥ Scan barcode</button><button class="btn" id="scan">📷 Scan label</button></div>
+    <input type="file" id="scanFile" accept="image/*" hidden><input type="file" id="bcFile" accept="image/*" hidden>
+    <div id="bcManual" hidden class="actions" style="flex-wrap:nowrap"><input id="bcCode" inputmode="numeric" placeholder="Type the barcode number"><button class="btn small" id="bcGo">Look up</button></div>
+    <div id="scanStatus" class="hint"></div><input type="hidden" id="bcVal" value="${esc(x.barcode||"")}"></div>
   <div class="card">
     <div class="grid2"><label class="f"><span>Name</span><input id="nm" value="${esc(x.name)}" placeholder="e.g. Rolled oats" autocomplete="off"></label>
     <label class="f"><span>Brand (optional)</span><input id="br" value="${esc(x.brand||"")}" placeholder="e.g. Quaker" autocomplete="off"></label></div>
@@ -642,7 +712,7 @@ function renderIngEdit(){
     <div id="err" class="err"></div>
     <div class="actions">${isNew?"<span></span>":`<button class="btn danger" id="del">Delete</button>`}<button class="btn" id="save">Save</button></div>
   </div>
-  ${isNew?"":`<div class="actions" style="margin:-4px 0 14px"><span></span><button class="btn soft small" id="snack">+ Add as a snack</button></div>`}
+  ${isNew?"":`<div class="actions" style="margin:-4px 0 14px">${favBtn(x)}<button class="btn soft small" id="snack">+ Add as a snack</button></div>`}
   ${usedIn.length?`<div class="card"><h3>Used in</h3>${usedIn.map(r=>esc(r.name)).join(", ")}</div>`:""}`;
   const syncUnit=()=>{ const u=$("#su").value, t=UNITS[u].t;
     $("#sgWrap").hidden = t==="m"; $("#sgLbl").textContent = t==="v" ? "…which weighs (g). Leave blank for liquids like water or milk." : "…which weighs (g)";
@@ -651,6 +721,10 @@ function renderIngEdit(){
   main.querySelectorAll("#quick button").forEach(b=>b.onclick=()=>{ const [q,u]=b.dataset.s.split(","); $("#sq").value=q; $("#su").value=u; syncUnit(); });
   $("#scan").onclick=()=>$("#scanFile").click();
   $("#scanFile").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) scanLabel(f); };
+  $("#scanBc").onclick=()=>$("#bcFile").click();
+  $("#bcFile").onchange=e=>{ const f=e.target.files[0]; e.target.value=""; if(f) scanBarcode(f, x.id); };
+  $("#bcGo").onclick=()=>lookupBarcode($("#bcCode").value.replace(/\D/g,""), x.id);
+  $("#bcCode").onkeydown=e=>{ if(e.key==="Enter") $("#bcGo").click(); };
   $("#save").onclick=()=>{
     const err=m=>{ $("#err").textContent=m; };
     const name=$("#nm").value.trim(); if(!name) return err("Give it a name.");
@@ -675,10 +749,11 @@ function renderIngEdit(){
       if(!(parseQty(pq)>0)) return err("Enter the package amount for the price, e.g. 16 oz.");
       if(gramsPerUnit({gPerMl,gPerPiece}, pu)==null) return err(UNITS[pu].t==="v" ? "To price by volume, add a cup weight under Other measurements." : "To price per piece, add a piece weight under Other measurements.");
       price={amount:amt, qty:pq, unit:pu}; }
-    Object.assign(x,{name, brand: brand||undefined, per, serving:{qty:$("#sq").value.trim(), unit:su, grams}, gPerMl, gPerPiece, price});
+    Object.assign(x,{name, brand: brand||undefined, barcode: $("#bcVal").value||undefined, per, serving:{qty:$("#sq").value.trim(), unit:su, grams}, gPerMl, gPerPiece, price});
     if(isNew) db.ingredients.push(x); save(); toast("Saved"); go({tab:"ingredients"});
   };
   if(!isNew) $("#snack").onclick=()=>openPlanDialog(null,"ing",x.id);
+  if(!isNew) bindFav(x, renderIngEdit);
   if(!isNew) $("#del").onclick=()=>{
     if(usedIn.length) return $("#err").textContent=`Remove it from ${usedIn.map(r=>r.name).join(", ")} first.`;
     if(!confirm(`Delete ${ingLabel(x)}?`)) return;
@@ -718,6 +793,53 @@ async function prepImage(file){
   const d=g.getImageData(0,0,c.width,c.height), p=d.data;
   for(let i=0;i<p.length;i+=4){ const y=0.299*p[i]+0.587*p[i+1]+0.114*p[i+2]; const v=Math.max(0,Math.min(255,(y-128)*1.5+128)); p[i]=p[i+1]=p[i+2]=v; }
   g.putImageData(d,0,0); return c;
+}
+/* ---------- Barcode: decode on the phone, then look up Open Food Facts (free product database) ---------- */
+let zxingReady=null;
+async function getZXing(){
+  if(!zxingReady) zxingReady=(async()=>{
+    if(!window.ZXingWASM){ const s=document.createElement("script"); s.src=blobUrl("bc-main","text/javascript");
+      await new Promise((res,rej)=>{ s.onload=res; s.onerror=()=>rej(new Error("load")); document.head.appendChild(s); }); }
+    const wasm=embedded("bc-wasm");
+    ZXingWASM.prepareZXingModule({overrides:{wasmBinary:wasm.buffer, locateFile:(p,pre)=>pre+p}, fireImmediately:true});
+    return ZXingWASM; })().catch(e=>{ zxingReady=null; throw e; });
+  return zxingReady;
+}
+async function scanBarcode(file, curId){
+  const st=$("#scanStatus"); st.textContent="Reading barcode…";
+  try{
+    const Z=await getZXing();
+    let res=await Z.readBarcodes(file,{tryHarder:true, formats:["EAN13","EAN8","UPCA","UPCE"], maxNumberOfSymbols:1});
+    if(!res.length){ const c=await prepImage(file); const ctx=c.getContext("2d");
+      res=await Z.readBarcodes(ctx.getImageData(0,0,c.width,c.height),{tryHarder:true, formats:["EAN13","EAN8","UPCA","UPCE"], maxNumberOfSymbols:1}); }
+    if(!res.length){ $("#bcManual").hidden=false; st.textContent="Couldn't read the barcode. Try a closer, sharper photo, or type the number under the bars."; return; }
+    lookupBarcode(res[0].text, curId);
+  }catch(e){ console.error(e); $("#bcManual").hidden=false; st.textContent="The barcode reader couldn't start here. You can type the number instead."; }
+}
+async function lookupBarcode(code, curId){
+  const st=$("#scanStatus");
+  if(!/^\d{6,14}$/.test(code)){ $("#bcManual").hidden=false; st.textContent="That doesn't look like a barcode number."; return; }
+  $("#bcCode").value=code;
+  const mine=db.ingredients.find(o=>o.barcode===code && o.id!==curId);
+  if(mine){ st.innerHTML=`You already have this one: <b>${esc(ingLabel(mine))}</b>. <button class="btn ghost small" id="bcOpen">Open it</button>`; $("#bcOpen").onclick=()=>go({tab:"ingredients",id:mine.id}); return; }
+  if(!navigator.onLine){ st.textContent=`Barcode ${code} read, but looking it up needs internet. Try again online, or use Scan label.`; return; }
+  st.textContent=`Looking up ${code}…`;
+  try{
+    const r=await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,product_name_en,brands,nutriments,serving_size,serving_quantity`);
+    const d=await r.json();
+    if(d.status!==1||!d.product){ $("#bcManual").hidden=false; st.textContent=`Barcode ${code} isn't in the free product database yet. Use Scan label instead.`; $("#bcVal").value=code; return; }
+    const P=d.product, n=P.nutriments||{};
+    const kcal = n["energy-kcal_100g"] ?? (n["energy_100g"]!=null ? n["energy_100g"]/4.184 : null);
+    const name=(P.product_name_en||P.product_name||"").trim(), brand=(P.brands||"").split(",")[0].trim();
+    if(name && !$("#nm").value.trim()) $("#nm").value=name;
+    if(brand && !$("#br").value.trim()) $("#br").value=brand;
+    $("#sq").value="100"; $("#su").value="g"; $("#su").onchange();
+    const vals={kcal, protein:n.proteins_100g, carbs:n.carbohydrates_100g, fat:n.fat_100g}; const got=[];
+    for(const k of MAC) if(vals[k]!=null && !isNaN(vals[k])){ $("#"+k).value=+(+vals[k]).toFixed(k==="kcal"?0:2); got.push(MACNAME[k].toLowerCase()); }
+    $("#bcVal").value=code;
+    st.innerHTML = got.length ? `Found <b>${esc([name,brand].filter(Boolean).join(" · ")||code)}</b>. Filled in ${got.join(", ")} per 100 g${P.serving_size?` (one serving is ${esc(P.serving_size)})`:""}. <b>Please check against the package.</b>`
+      : `Found ${esc(name||code)}, but it has no nutrition numbers. Use Scan label instead.`;
+  }catch(e){ console.error(e); st.textContent="Couldn't reach the product database. Check your connection, or use Scan label."; }
 }
 async function scanLabel(file){
   const st=$("#scanStatus"); const status=t=>{ st.textContent=t; };
@@ -784,10 +906,10 @@ function renderRecList(){
     const r={id:uid(),name:"New recipe",servings:1,finalWeight:"",items:[]};
     db.recipes.push(r); save(); go({tab:"recipes",id:r.id,fresh:true}); });
   const q=query.recipes.toLowerCase();
-  const list=db.recipes.filter(x=>x.name.toLowerCase().includes(q)).sort(byName);
+  const list=db.recipes.filter(x=>x.name.toLowerCase().includes(q)).sort(favFirst);
   main.innerHTML=`<input class="search" id="q" placeholder="Search recipes" value="${esc(query.recipes)}" autocomplete="off">
     ${list.length?`<div class="list">${list.map(r=>{ const t=totals(r.id), s=Number(r.servings)||1;
-      return `<button class="item" data-id="${r.id}"><div class="grow"><div class="name">${esc(r.name)}</div>
+      return `<button class="item" data-id="${r.id}"><div class="grow"><div class="name">${r.fav?"★ ":""}${esc(r.name)}</div>
       <div class="sub">${s!==1?`per serving (makes ${fmt(s,2)}): `:"whole recipe: "}${short(add(zero(),t.total,1/s))}</div></div><span class="chev">›</span></button>`; }).join("")}</div>`
     : `<div class="empty">${db.recipes.length?"No matches.":"No recipes yet. Add a few ingredients first, then tap <b>+ New</b>."}</div>`}`;
   liveSearch("#q","recipes",renderRecList);
@@ -812,7 +934,7 @@ function renderRecipe(){
   <div class="card" id="sum">
     <div class="seg" id="vw">${Object.entries(views).map(([k,l])=>`<button data-v="${k}" class="${k===pref.view?"on":""}">${l}</button>`).join("")}</div>
     <div id="mb"></div><p class="hint" id="wt"></p><p class="hint" id="cost"></p><p class="warn" id="bad"></p>
-    <div class="actions"><span></span><button class="btn soft small" id="plan">+ Add to meal plan</button></div>
+    <div class="actions"><span></span>${favBtn(r)}<button class="btn soft small" id="plan">+ Add to meal plan</button></div>
   </div>
   <div class="card"><h3>Ingredients &amp; sub-recipes</h3>
     <div id="items">${r.items.length?r.items.map(itemRow).join(""):`<div class="empty" style="padding:16px">Nothing added yet.</div>`}</div>
@@ -835,7 +957,7 @@ function renderRecipe(){
     l.querySelector(".rm").onclick=()=>{ r.items.splice(+l.dataset.i,1); save(); renderRecipe(); };
   });
   $("#addItem").onclick=()=>openPicker(r);
-  $("#plan").onclick=()=>openPlanDialog(r.id);
+  $("#plan").onclick=()=>openPlanDialog(r.id); bindFav(r, renderRecipe);
   $("#dup").onclick=()=>{ const c=JSON.parse(JSON.stringify(r)); c.id=uid(); c.name=r.name+" (copy)"; db.recipes.push(c); save(); toast("Duplicated"); go({tab:"recipes",id:c.id}); };
   $("#del").onclick=()=>{
     if(usedBy.length) return $("#err").textContent=`It's a sub-recipe in ${usedBy.map(o=>o.name).join(", ")}. Remove it there first.`;
@@ -877,7 +999,7 @@ function drawPicker(){
   document.querySelectorAll("#pickSeg button").forEach(b=>b.classList.toggle("on", b.dataset.k===pick.kind));
   let rows;
   if(pick.kind==="ing"){
-    rows=db.ingredients.filter(x=>ingMatch(x,q)).sort(byName)
+    rows=db.ingredients.filter(x=>ingMatch(x,q)).sort(favFirst)
       .map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${ingHtml(x)}</div><div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}</div></div><span>＋</span></button>`);
     if(!db.ingredients.length) rows=[`<div class="empty">No ingredients yet. Add some in the Ingredients tab.</div>`];
   } else {
