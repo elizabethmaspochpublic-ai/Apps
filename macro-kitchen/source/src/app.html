@@ -322,13 +322,16 @@ async function pickRestore(){
   catch(e){ console.error(e); return msg(`Couldn't read <b>${esc(f.name)}</b>. Pick the file named like <b>macros-backup-2026-11-25.json</b>.`); }
   if(!d || !Array.isArray(d.ingredients) || !Array.isArray(d.recipes)) return msg(`<b>${esc(f.name)}</b> isn't a Macro Kitchen backup. Pick the file named like <b>macros-backup-….json</b>.`);
   const n=d.ingredients.length, r=d.recipes.length, ph=d.photos?Object.keys(d.photos).length:0;
-  body.innerHTML=`<p>This backup has <b>${n}</b> ingredient${n===1?"":"s"}, <b>${r}</b> recipe${r===1?"":"s"}${d.plan&&d.plan.entries?`, ${d.plan.entries.length} planned items`:""}${d.body&&d.body.weights?`, ${d.body.weights.length} weigh-ins`:""}${ph?` and ${ph} photo${ph===1?"":"s"}`:""}${d.exported?` (saved ${esc(new Date(d.exported).toLocaleString())})`:""}.</p>
-    ${hasData()?`<p class="warn">Restoring replaces what's on this device now.</p>`:""}
+  const wN=d.body&&d.body.weights?d.body.weights.length:0, lN=d.log?Object.keys(d.log).length:0, pN=d.plan&&d.plan.entries?d.plan.entries.length:0;
+  if(!n && !r && !wN && !lN && !pN) return msg(`<b>${esc(f.name)}</b> is an empty backup (no ingredients, recipes, weigh-ins or exercise days)${d.exported?`, saved ${esc(new Date(d.exported).toLocaleString())}`:""}. It was probably made from a copy of the app that had no data, such as the page open in the browser instead of the home-screen app. Nothing was changed.`);
+  body.innerHTML=`<p>This backup has <b>${n}</b> ingredient${n===1?"":"s"}, <b>${r}</b> recipe${r===1?"":"s"}${d.plan&&d.plan.entries?`, ${d.plan.entries.length} planned items`:""}${wN?`, ${wN} weigh-ins`:""}${lN?`, ${lN} days of exercise/macro history`:""}${ph?` and ${ph} photo${ph===1?"":"s"}`:""}${d.exported?` (saved ${esc(new Date(d.exported).toLocaleString())})`:""}.</p>
+    ${hasData()?`<p class="warn">Restoring replaces what's on this device now. A copy of the current data is kept, so you can undo it in Settings.</p>`:""}
     <div class="actions"><button class="btn ghost" data-close2>Cancel</button><button class="btn" id="rsGo">Restore</button></div>`;
   body.querySelector("[data-close2]").onclick=()=>$("#dlg").close();
   $("#rsGo").onclick=async()=>{
     body.innerHTML=`<p id="rsMsg">Restoring…</p>`;
     try{
+      try{ localStorage.setItem(KEY+"-undo", JSON.stringify(db)); }catch(e){}
       db=migrate({ingredients:d.ingredients,recipes:d.recipes,plan:d.plan,body:d.body,log:d.log}); save();
       let ok=0, bad=0;
       if(d.photos) for(const [id,u] of Object.entries(d.photos)){
@@ -1295,7 +1298,7 @@ function renderSettings(){
     <p>${db.ingredients.length} ingredients · ${db.recipes.length} recipes · ${db.plan.entries.length} planned meals.</p>
     <p class="sub">Last backup: <b>${last?new Date(last).toLocaleString():"never"}</b></p>
     <div class="actions" style="justify-content:flex-start">
-      <button class="btn" id="exp">Back up now</button><button class="btn ghost" id="imp">Restore from backup</button></div>
+      <button class="btn" id="exp">Back up now</button><button class="btn ghost" id="imp">Restore from backup</button>${(()=>{ try{ return localStorage.getItem(KEY+"-undo")?`<button class="btn ghost" id="undoRs">Undo last restore</button>`:""; }catch(e){ return ""; } })()}</div>
     <p class="hint">Back up saves a file. On iPhone choose <b>Save to Files</b> then <b>iCloud Drive</b>; on Android save it to <b>Google Drive</b> or Downloads. Restore replaces what is on this device.</p></div>
     <div class="card"><h3>What keeps your data safe</h3>
     <p class="sub" style="margin:0 0 6px">✅ <b>App updates never erase your data.</b> New versions arrive by themselves the next time you open the app online. You don't need to download anything again.</p>
@@ -1305,6 +1308,8 @@ function renderSettings(){
   main.querySelectorAll("#thm button").forEach(b=>b.onclick=()=>{ setTheme(b.dataset.t); renderSettings(); });
   $("#exp").onclick=async()=>{ if(await doExport()) renderSettings(); };
   $("#imp").onclick=()=>pickRestore();
+  if($("#undoRs")) $("#undoRs").onclick=()=>{ try{ const u=JSON.parse(localStorage.getItem(KEY+"-undo")); if(!confirm(`Go back to the data from before the last restore (${u.ingredients.length} ingredients, ${u.recipes.length} recipes)?`)) return;
+    db=migrate(u); save(); localStorage.removeItem(KEY+"-undo"); toast("Restore undone"); renderSettings(); }catch(e){ toast("Nothing to undo"); } };
   if(navigator.storage&&navigator.storage.persisted) navigator.storage.persisted().then(p=>{ const el=$("#pst"); if(el) el.textContent=p?"Storage is marked as protected on this device.":""; }).catch(()=>{});
 }
 
