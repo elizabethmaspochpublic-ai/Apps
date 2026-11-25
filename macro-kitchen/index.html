@@ -287,7 +287,7 @@ async function compressPhoto(file, max=1280){
   return new Promise(res=>c.toBlob(res,"image/jpeg",0.72));
 }
 async function addPhotos(files){ const ids=[]; for(const f of files){ try{ const b=await compressPhoto(f); const id="ph_"+uid(); await putPhoto(id,b); ids.push(id); }catch(e){ console.error(e); toast("Couldn't add that photo"); } } return ids; }
-function pickPhotos(multiple=true){ return new Promise(res=>{ const i=document.createElement("input"); i.type="file"; i.accept="image/*"; i.multiple=multiple; i.onchange=()=>res([...i.files]); i.click(); }); }
+function pickPhotos(multiple=true){ return filePicker("image/*", multiple); }
 function hydratePhotos(root=document){ root.querySelectorAll("img[data-ph]").forEach(async im=>{ im.src=await photoURL(im.dataset.ph); }); }
 function viewPhoto(id, onDelete, caption){
   const body=openDlg(caption||"Photo", `<img data-ph="${id}" style="width:100%;border-radius:12px;display:block">
@@ -306,18 +306,41 @@ async function doExport(){
   try{ localStorage.setItem(KEY+"-backup", Date.now()); }catch(e){}
   toast("Backup saved"); return true;
 }
-function pickRestore(after){
-  const inp=document.createElement("input"); inp.type="file"; inp.accept=".json,application/json,text/plain";
-  inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return;
-    try{ const d=JSON.parse(await f.text());
-      if(!Array.isArray(d.ingredients)||!Array.isArray(d.recipes)) throw new Error("bad");
-      if(hasData() && !confirm(`Replace what's on this device with ${d.ingredients.length} ingredients and ${d.recipes.length} recipes from the backup?`)) return;
+// File pickers must live in the page on iPhone/iPad, or Safari may never report the chosen file.
+function filePicker(accept, multiple){ return new Promise(res=>{
+  let i=document.getElementById("hiddenPicker"); if(i) i.remove();
+  i=document.createElement("input"); i.type="file"; i.id="hiddenPicker"; if(accept) i.accept=accept; i.multiple=!!multiple;
+  i.style.cssText="position:fixed;left:-1000px;top:0;opacity:0;width:1px;height:1px";
+  document.body.appendChild(i); i.onchange=()=>res([...i.files]); i.click(); }); }
+const readText=f=>f.text ? f.text() : new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(r.error); r.readAsText(f); });
+async function pickRestore(){
+  // No file-type filter: iOS sometimes greys out .json backups when one is set.
+  const [f]=await filePicker("", false); if(!f) return;
+  const body=openDlg("Restore from backup", `<p id="rsMsg">Reading ${esc(f.name)}…</p>`); const msg=t=>{ $("#rsMsg").innerHTML=t; };
+  let d;
+  try{ const txt=(await readText(f)).replace(/^\uFEFF/,"").trim(); d=JSON.parse(txt.slice(txt.indexOf("{"))); }
+  catch(e){ console.error(e); return msg(`Couldn't read <b>${esc(f.name)}</b>. Pick the file named like <b>macros-backup-2026-11-25.json</b>.`); }
+  if(!d || !Array.isArray(d.ingredients) || !Array.isArray(d.recipes)) return msg(`<b>${esc(f.name)}</b> isn't a Macro Kitchen backup. Pick the file named like <b>macros-backup-….json</b>.`);
+  const n=d.ingredients.length, r=d.recipes.length, ph=d.photos?Object.keys(d.photos).length:0;
+  body.innerHTML=`<p>This backup has <b>${n}</b> ingredient${n===1?"":"s"}, <b>${r}</b> recipe${r===1?"":"s"}${d.plan&&d.plan.entries?`, ${d.plan.entries.length} planned items`:""}${d.body&&d.body.weights?`, ${d.body.weights.length} weigh-ins`:""}${ph?` and ${ph} photo${ph===1?"":"s"}`:""}${d.exported?` (saved ${esc(new Date(d.exported).toLocaleString())})`:""}.</p>
+    ${hasData()?`<p class="warn">Restoring replaces what's on this device now.</p>`:""}
+    <div class="actions"><button class="btn ghost" data-close2>Cancel</button><button class="btn" id="rsGo">Restore</button></div>`;
+  body.querySelector("[data-close2]").onclick=()=>$("#dlg").close();
+  $("#rsGo").onclick=async()=>{
+    body.innerHTML=`<p id="rsMsg">Restoring…</p>`;
+    try{
       db=migrate({ingredients:d.ingredients,recipes:d.recipes,plan:d.plan,body:d.body,log:d.log}); save();
-      if(d.photos) for(const [id,u] of Object.entries(d.photos)){ try{ await putPhoto(id, await (await fetch(u)).blob()); }catch(e){ console.error(e); } }
+      let ok=0, bad=0;
+      if(d.photos) for(const [id,u] of Object.entries(d.photos)){
+        try{ const [meta,b64]=String(u).split(","); const bin=atob(b64); const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i);
+          await putPhoto(id, new Blob([a],{type:(meta.match(/data:([^;]+)/)||[])[1]||"image/jpeg"})); ok++; msg(`Restoring photos… ${ok} of ${ph}`); }
+        catch(e){ console.error(e); bad++; } }
       try{ localStorage.setItem(KEY+"-backup", Date.now()); }catch(e){}
-      toast(`Restored ${d.ingredients.length} ingredients, ${d.recipes.length} recipes`); render();
-    }catch(err){ alert("That file isn't a Macro Kitchen backup."); } };
-  inp.click();
+      urlCache.clear(); render();
+      msg(`✅ Restored ${n} ingredient${n===1?"":"s"} and ${r} recipe${r===1?"":"s"}${ph?`, ${ok} photo${ok===1?"":"s"}`:""}.${bad?` ${bad} photo${bad===1?"":"s"} couldn't be restored.`:""}`);
+      body.insertAdjacentHTML("beforeend",`<div class="actions"><span></span><button class="btn" id="rsDone">Done</button></div>`); $("#rsDone").onclick=()=>$("#dlg").close();
+    }catch(e){ console.error(e); msg(`Something went wrong while restoring (${esc(e.message||e)}). Your backup file is unchanged; please try again.`); }
+  };
 }
 const backupBanner=()=> backupDue() ? `<div class="scanbox" id="bkBan" style="display:flex;align-items:center;gap:10px"><div class="grow"><b>Back up your data</b><div class="sub">${getNum("-backup")?"You've made changes since your last backup.":"You haven't saved a backup yet."} Save one to iCloud Drive so nothing is lost if the app is deleted.</div></div><button class="btn small" id="bkNow">Back up</button></div>` : "";
 const restoreCard=()=> hasData() ? "" : `<div class="scanbox"><b>Reinstalled the app?</b><div class="sub" style="margin:2px 0 8px">Bring back your ingredients and recipes from a backup file.</div><button class="btn small" id="rsNow">Restore from backup</button></div>`;
