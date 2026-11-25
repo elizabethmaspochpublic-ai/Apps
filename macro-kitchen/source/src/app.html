@@ -357,7 +357,9 @@ function liveSearch(id, key, rerender){
 /* =========================================================
    Home: goals, gauges, plan, calculator
    ========================================================= */
+const isSnack=e=>e.kind==="ing";
 function entryMacros(e){
+  if(isSnack(e)) return itemInfo({kind:"ing", id:e.ingId, qty:e.qty, unit:e.unit}).m;
   const r=rec(e.recipeId); if(!r) return zero();
   const s=Number(r.servings)||1; return add(zero(), totals(r.id).total, (Number(e.servings)||0)/s);
 }
@@ -369,7 +371,7 @@ function gaugeSvg(frac, color){
   </svg>`;
 }
 function renderHome(){
-  setHeader("Home", `<button class="btn small">+ Plan meal</button>`, ()=>openPlanDialog());
+  setHeader("Home", `<button class="btn small">+ Add food</button>`, ()=>openPlanDialog());
   const P=db.plan, week=pref.homeMode==="week";
   const entries = week ? P.entries : P.entries.filter(e=>e.day===pref.day);
   const got=zero(); entries.forEach(e=>add(got, entryMacros(e)));
@@ -381,7 +383,7 @@ function renderHome(){
       <div class="lbl" style="color:${colors[k]}">${MACNAME[k]}${goal?` · ${fmt(fr*100)}%`:""}</div></div>`; }).join("");
   const daysHave = new Set(P.entries.map(e=>e.day));
   let planHtml;
-  if(!P.entries.length) planHtml=`<div class="empty" style="padding:14px">${db.recipes.length?"No meals planned yet. Tap <b>+ Plan meal</b> to pick recipes you intend to cook.":"Add ingredients and recipes first, then plan meals here."}</div>`;
+  if(!P.entries.length) planHtml=`<div class="empty" style="padding:14px">${db.recipes.length?"Nothing planned yet. Tap <b>+ Add food</b> to add recipes you intend to cook or snacks.":(db.ingredients.length?"Tap <b>+ Add food</b> to add a snack, or make a recipe first.":"Add ingredients and recipes first, then plan meals and snacks here.")}</div>`;
   else if(week) planHtml = DAYS.map((d,i)=>{ const es=P.entries.filter(e=>e.day===i); if(!es.length) return "";
       return `<div class="sub" style="margin-top:8px;font-weight:600">${DAYS_LONG[i]}</div>${es.map(planRow).join("")}`; }).join("");
   else planHtml = entries.length ? entries.map(planRow).join("") : `<div class="empty" style="padding:14px">Nothing planned for ${DAYS_LONG[pref.day]}.</div>`;
@@ -391,7 +393,7 @@ function renderHome(){
     <div class="card"><h3><span class="grow">${week?"This week vs weekly goal":DAYS_LONG[pref.day]+" vs daily goal"}</span><button class="btn ghost small" id="goals">Edit goals</button></h3>
       <div class="gauges">${gauges}</div></div>
     <div class="convbar"><button class="btn soft" id="conv">⇄ Conversion calculator</button><button class="btn soft" id="toGroc">🛒 Grocery list</button></div>
-    <div class="card"><h3><span class="grow">${week?"Planned this week":"Planned meals"}</span>${P.entries.length?`<button class="btn danger small" id="clr">Clear week</button>`:""}</h3>${planHtml}</div>`;
+    <div class="card"><h3><span class="grow">${week?"Planned this week":"Meals &amp; snacks"}</span>${P.entries.length?`<button class="btn danger small" id="clr">Clear week</button>`:""}</h3>${planHtml}</div>`;
   main.querySelectorAll("#mode button").forEach(b=>b.onclick=()=>{ pref.homeMode=b.dataset.m; savePref(); renderHome(); });
   main.querySelectorAll("#days button").forEach(b=>b.onclick=()=>{ pref.day=+b.dataset.d; renderHome(); });
   $("#goals").onclick=openGoals; $("#conv").onclick=()=>openConverter(); $("#toGroc").onclick=()=>go({tab:"grocery"});
@@ -399,6 +401,12 @@ function renderHome(){
   bindPlanRows(renderHome); bindBackupBits();
 }
 function planRow(e){
+  if(isSnack(e)){ const x=ing(e.ingId); const units=unitsFor(x); const list=units.includes(e.unit)?units:[e.unit,...units];
+    return `<div class="line" data-e="${e.id}"><div class="grow"><div>${x?esc(x.name):"<i>(deleted ingredient)</i>"}<span class="tag">snack</span></div>
+      <div class="sub">${short(entryMacros(e))}</div></div>
+      <input class="qty pq" inputmode="text" value="${esc(e.qty)}" aria-label="Amount">
+      <select class="unit pu" aria-label="Unit">${unitOptions(list,e.unit)}</select>
+      <button class="btn danger small prm" aria-label="Remove">✕</button></div>`; }
   const r=rec(e.recipeId);
   return `<div class="line" data-e="${e.id}"><div class="grow"><div>${r?esc(r.name):"<i>(deleted recipe)</i>"}</div>
     <div class="sub">${short(entryMacros(e))}</div></div>
@@ -408,32 +416,55 @@ function planRow(e){
 function bindPlanRows(rerender){
   main.querySelectorAll(".line[data-e]").forEach(l=>{
     const e=db.plan.entries.find(z=>z.id===l.dataset.e);
-    l.querySelector(".pq").onchange=ev=>{ const n=parseQty(ev.target.value); e.servings= n>0?n:1; save(); rerender(); };
+    l.querySelector(".pq").onchange=ev=>{ const n=parseQty(ev.target.value);
+      if(isSnack(e)) e.qty = n>0 ? ev.target.value.trim() : "1"; else e.servings= n>0?n:1; save(); rerender(); };
+    const u=l.querySelector(".pu"); if(u) u.onchange=()=>{ e.unit=u.value; save(); rerender(); };
     l.querySelector(".prm").onclick=()=>{ db.plan.entries=db.plan.entries.filter(z=>z!==e); save(); rerender(); };
   });
 }
-function openPlanDialog(recipeId){
-  if(!db.recipes.length) return toast("Make a recipe first");
+function openPlanDialog(recipeId, mode, ingId){
+  if(!db.recipes.length && !db.ingredients.length) return toast("Add an ingredient or recipe first");
+  mode = mode || (recipeId ? "rec" : (db.recipes.length ? "rec" : "ing"));
   const sel=new Set([pref.homeMode==="week"?todayIdx():pref.day]);
-  const body=openDlg("Plan a meal", `
-    <label class="f"><span>Recipe</span><select id="pr">${db.recipes.slice().sort(byName).map(r=>`<option value="${r.id}" ${r.id===recipeId?"selected":""}>${esc(r.name)}</option>`).join("")}</select></label>
-    <label class="f"><span>Servings you'll eat (each day)</span><input id="ps" inputmode="decimal" value="1"></label>
+  const ings=db.ingredients.slice().sort(byName), recs=db.recipes.slice().sort(byName);
+  const body=openDlg("Add food", `
+    <div class="seg" id="pm"><button data-m="rec" class="${mode==="rec"?"on":""}">Recipe</button><button data-m="ing" class="${mode==="ing"?"on":""}">Snack (ingredient)</button></div>
+    <div id="pmRec" ${mode==="rec"?"":"hidden"}>
+      ${recs.length?`<label class="f"><span>Recipe</span><select id="pr">${recs.map(r=>`<option value="${r.id}" ${r.id===recipeId?"selected":""}>${esc(r.name)}</option>`).join("")}</select></label>
+      <label class="f"><span>Servings you'll eat (each day)</span><input id="ps" inputmode="decimal" value="1"></label>`:`<p class="empty" style="padding:8px">No recipes yet.</p>`}</div>
+    <div id="pmIng" ${mode==="ing"?"":"hidden"}>
+      ${ings.length?`<label class="f"><span>Ingredient</span><select id="pi">${ings.map(x=>`<option value="${x.id}" ${x.id===ingId?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>
+      <span class="sub">Amount (each day)</span><div class="grid2" style="grid-template-columns:1fr 1.2fr;margin:4px 0 12px"><input id="pq" inputmode="text"><select id="pu"></select></div>`:`<p class="empty" style="padding:8px">No ingredients yet.</p>`}</div>
     <span class="sub">Which days</span>
     <div class="days" id="pd" style="margin-top:4px">${DAYS.map((d,i)=>`<button data-d="${i}" class="${sel.has(i)?"on":""}">${d}</button>`).join("")}</div>
-    <div class="chips"><button data-q="all">Every day</button><button data-q="wk">Weekdays</button><button data-q="none">Clear</button></div>
+    <div class="chips" id="pdq"><button data-q="all">Every day</button><button data-q="wk">Weekdays</button><button data-q="none">Clear</button></div>
     <p class="hint" id="pinfo"></p><div class="err" id="perr"></div>
-    <div class="actions"><span></span><button class="btn" id="padd">Add to plan</button></div>`);
-  const info=()=>{ const r=rec($("#pr").value); const s=Number(r.servings)||1; const n=parseQty($("#ps").value)||0;
-    $("#pinfo").textContent=`Recipe makes ${fmt(s,2)} serving${s===1?"":"s"}. ${sel.size} day${sel.size===1?"":"s"} × ${fmt(n,2)} = ${fmt(sel.size*n,2)} servings (${fmt(sel.size*n/s,2)} batch${sel.size*n/s===1?"":"es"} to cook).`; };
+    <div class="actions"><span></span><button class="btn" id="padd">Add</button></div>`);
+  const setIngDefaults=()=>{ const x=ing($("#pi").value); const su=x.serving.unit;
+    $("#pu").innerHTML=unitOptions(unitsFor(x), su); $("#pq").value = x.serving.qty; info(); };
+  const info=()=>{ const el=$("#pinfo"); $("#perr").textContent="";
+    if(mode==="rec"){ if(!recs.length) return el.textContent=""; const r=rec($("#pr").value); const s=Number(r.servings)||1; const n=parseQty($("#ps").value)||0;
+      el.textContent=`Recipe makes ${fmt(s,2)} serving${s===1?"":"s"}. ${sel.size} day${sel.size===1?"":"s"} × ${fmt(n,2)} = ${fmt(sel.size*n,2)} servings (${fmt(sel.size*n/s,2)} batch${sel.size*n/s===1?"":"es"} to cook).`; }
+    else { if(!ings.length) return el.textContent=""; const i=itemInfo({kind:"ing",id:$("#pi").value,qty:$("#pq").value,unit:$("#pu").value});
+      el.textContent = i.bad ? "" : `Each day: ${short(i.m)}`; } };
   const paint=()=>{ body.querySelectorAll("#pd button").forEach(b=>b.classList.toggle("on", sel.has(+b.dataset.d))); info(); };
+  body.querySelectorAll("#pm button").forEach(b=>b.onclick=()=>{ mode=b.dataset.m; body.querySelectorAll("#pm button").forEach(z=>z.classList.toggle("on",z===b));
+    $("#pmRec").hidden=mode!=="rec"; $("#pmIng").hidden=mode!=="ing"; info(); });
   body.querySelectorAll("#pd button").forEach(b=>b.onclick=()=>{ const d=+b.dataset.d; sel.has(d)?sel.delete(d):sel.add(d); paint(); });
-  body.querySelectorAll(".chips button").forEach(b=>b.onclick=()=>{ sel.clear(); if(b.dataset.q==="all") DAYS.forEach((_,i)=>sel.add(i)); if(b.dataset.q==="wk") [0,1,2,3,4].forEach(i=>sel.add(i)); paint(); });
-  $("#pr").onchange=info; $("#ps").oninput=info; info();
+  body.querySelectorAll("#pdq button").forEach(b=>b.onclick=()=>{ sel.clear(); if(b.dataset.q==="all") DAYS.forEach((_,i)=>sel.add(i)); if(b.dataset.q==="wk") [0,1,2,3,4].forEach(i=>sel.add(i)); paint(); });
+  if(recs.length){ $("#pr").onchange=info; $("#ps").oninput=info; }
+  if(ings.length){ $("#pi").onchange=setIngDefaults; $("#pq").oninput=info; $("#pu").onchange=info; setIngDefaults(); }
+  info();
   $("#padd").onclick=()=>{
-    const n=parseQty($("#ps").value); if(!(n>0)) return $("#perr").textContent="Enter how many servings.";
     if(!sel.size) return $("#perr").textContent="Pick at least one day.";
-    [...sel].sort().forEach(d=>db.plan.entries.push({id:uid(), recipeId:$("#pr").value, servings:n, day:d}));
-    save(); $("#dlg").close(); toast("Added to plan"); if(route.tab==="home") renderHome();
+    const days=[...sel].sort();
+    if(mode==="rec"){ if(!recs.length) return $("#perr").textContent="Make a recipe first.";
+      const n=parseQty($("#ps").value); if(!(n>0)) return $("#perr").textContent="Enter how many servings.";
+      days.forEach(d=>db.plan.entries.push({id:uid(), recipeId:$("#pr").value, servings:n, day:d})); }
+    else { if(!ings.length) return $("#perr").textContent="Add an ingredient first.";
+      const q=$("#pq").value.trim(); if(!(parseQty(q)>0)) return $("#perr").textContent="Enter an amount, like 30 or 1/2.";
+      days.forEach(d=>db.plan.entries.push({id:uid(), kind:"ing", ingId:$("#pi").value, qty:q, unit:$("#pu").value, day:d})); }
+    save(); $("#dlg").close(); toast("Added"); if(route.tab==="home") renderHome();
   };
 }
 function openGoals(){
@@ -493,7 +524,9 @@ function bestAmount(x, grams){
 }
 function groceryData(){
   const acc={};
-  for(const e of db.plan.entries){ const r=rec(e.recipeId); if(!r) continue;
+  for(const e of db.plan.entries){
+    if(isSnack(e)){ if(ing(e.ingId)){ const i=itemInfo({kind:"ing",id:e.ingId,qty:e.qty,unit:e.unit}); acc[e.ingId]=(acc[e.ingId]||0)+i.grams; if(i.bad) acc._bad=true; } continue; }
+    const r=rec(e.recipeId); if(!r) continue;
     flatten(r.id, (Number(e.servings)||0)/(Number(r.servings)||1), acc); }
   const bad=acc._bad; delete acc._bad;
   return {items:Object.entries(acc).filter(([,g])=>g>0).map(([id,g])=>({x:ing(id), g})).filter(o=>o.x).sort((a,b)=>byName(a.x,b.x)), bad};
@@ -503,7 +536,8 @@ function renderGrocery(){
   const P=db.plan, {items,bad}=groceryData();
   const need=items.filter(o=>!P.have[o.x.id]), have=items.filter(o=>P.have[o.x.id]);
   const xNeed=P.extra.filter(e=>!e.have), xHave=P.extra.filter(e=>e.have);
-  const recipes=[...new Set(P.entries.map(e=>e.recipeId))].map(rec).filter(Boolean);
+  const recipes=[...new Set(P.entries.filter(e=>!isSnack(e)).map(e=>e.recipeId))].map(rec).filter(Boolean);
+  if(P.entries.some(isSnack)) recipes.push({name:"snacks"});
   const row=o=>`<label class="gitem ${P.have[o.x.id]?"have":""}"><input type="checkbox" data-i="${o.x.id}" ${P.have[o.x.id]?"checked":""}>
      <div class="grow"><div class="name">${esc(o.x.name)}</div><div class="sub">${bestAmount(o.x,o.g)}</div></div></label>`;
   const xrow=e=>`<label class="gitem ${e.have?"have":""}"><input type="checkbox" data-x="${e.id}" ${e.have?"checked":""}>
@@ -583,6 +617,7 @@ function renderIngEdit(){
     <div id="err" class="err"></div>
     <div class="actions">${isNew?"<span></span>":`<button class="btn danger" id="del">Delete</button>`}<button class="btn" id="save">Save</button></div>
   </div>
+  ${isNew?"":`<div class="actions" style="margin:-4px 0 14px"><span></span><button class="btn soft small" id="snack">+ Add as a snack</button></div>`}
   ${usedIn.length?`<div class="card"><h3>Used in</h3>${usedIn.map(r=>esc(r.name)).join(", ")}</div>`:""}`;
   const syncUnit=()=>{ const u=$("#su").value, t=UNITS[u].t;
     $("#sgWrap").hidden = t==="m"; $("#sgLbl").textContent = t==="v" ? "…which weighs (g). Leave blank for liquids like water or milk." : "…which weighs (g)";
@@ -610,10 +645,11 @@ function renderIngEdit(){
     Object.assign(x,{name, per, serving:{qty:$("#sq").value.trim(), unit:su, grams}, gPerMl, gPerPiece});
     if(isNew) db.ingredients.push(x); save(); toast("Saved"); go({tab:"ingredients"});
   };
+  if(!isNew) $("#snack").onclick=()=>openPlanDialog(null,"ing",x.id);
   if(!isNew) $("#del").onclick=()=>{
     if(usedIn.length) return $("#err").textContent=`Remove it from ${usedIn.map(r=>r.name).join(", ")} first.`;
     if(!confirm(`Delete ${x.name}?`)) return;
-    db.ingredients=db.ingredients.filter(o=>o.id!==x.id); save(); go({tab:"ingredients"});
+    db.ingredients=db.ingredients.filter(o=>o.id!==x.id); db.plan.entries=db.plan.entries.filter(e=>!(isSnack(e)&&e.ingId===x.id)); save(); go({tab:"ingredients"});
   };
 }
 
