@@ -230,7 +230,36 @@ function migrate(d){
   d.plan.entries = d.plan.entries||[]; d.plan.have=d.plan.have||{}; d.plan.extra=d.plan.extra||[];
   return d;
 }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(db)); }catch(e){ toast("Could not save on this device"); } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(db)); localStorage.setItem(KEY+"-changed", Date.now()); }catch(e){ toast("Could not save on this device"); } }
+/* ---------- Backups: data lives in this home-screen app; deleting the icon deletes it, so keep a file copy ---------- */
+const getNum=k=>{ try{ return +localStorage.getItem(KEY+k)||0; }catch(e){ return 0; } };
+const hasData=()=>db.ingredients.length+db.recipes.length>0;
+function backupDue(){ if(!hasData()) return false; const last=getNum("-backup"); return !last || (getNum("-changed")>last && Date.now()-last>3*864e5); }
+async function doExport(){
+  const txt=JSON.stringify({app:"macro-kitchen",version:2,exported:new Date().toISOString(),...db},null,1);
+  const name=`macros-backup-${new Date().toISOString().slice(0,10)}.json`;
+  const file=new File([txt],name,{type:"application/json"});
+  try{ if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:name}); }
+    else { const a=document.createElement("a"); a.href=URL.createObjectURL(file); a.download=name; document.body.appendChild(a); a.click(); a.remove(); } }
+  catch(e){ if(e.name==="AbortError") return false; throw e; }
+  try{ localStorage.setItem(KEY+"-backup", Date.now()); }catch(e){}
+  toast("Backup saved"); return true;
+}
+function pickRestore(after){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="application/json,.json";
+  inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return;
+    try{ const d=JSON.parse(await f.text());
+      if(!Array.isArray(d.ingredients)||!Array.isArray(d.recipes)) throw new Error("bad");
+      if(hasData() && !confirm(`Replace what's on this device with ${d.ingredients.length} ingredients and ${d.recipes.length} recipes from the backup?`)) return;
+      db=migrate({ingredients:d.ingredients,recipes:d.recipes,plan:d.plan}); save();
+      try{ localStorage.setItem(KEY+"-backup", Date.now()); }catch(e){}
+      toast(`Restored ${d.ingredients.length} ingredients, ${d.recipes.length} recipes`); render();
+    }catch(err){ alert("That file isn't a Macro Kitchen backup."); } };
+  inp.click();
+}
+const backupBanner=()=> backupDue() ? `<div class="scanbox" id="bkBan" style="display:flex;align-items:center;gap:10px"><div class="grow"><b>Back up your data</b><div class="sub">${getNum("-backup")?"You've made changes since your last backup.":"You haven't saved a backup yet."} Save one to iCloud Drive so nothing is lost if the app is deleted.</div></div><button class="btn small" id="bkNow">Back up</button></div>` : "";
+const restoreCard=()=> hasData() ? "" : `<div class="scanbox"><b>Reinstalled the app?</b><div class="sub" style="margin:2px 0 8px">Bring back your ingredients and recipes from a backup file.</div><button class="btn small" id="rsNow">Restore from backup</button></div>`;
+function bindBackupBits(){ const b=$("#bkNow"); if(b) b.onclick=async()=>{ if(await doExport()) render(); }; const r=$("#rsNow"); if(r) r.onclick=()=>pickRestore(); }
 const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
 const ing=id=>db.ingredients.find(x=>x.id===id);
 const rec=id=>db.recipes.find(x=>x.id===id);
@@ -356,7 +385,7 @@ function renderHome(){
   else if(week) planHtml = DAYS.map((d,i)=>{ const es=P.entries.filter(e=>e.day===i); if(!es.length) return "";
       return `<div class="sub" style="margin-top:8px;font-weight:600">${DAYS_LONG[i]}</div>${es.map(planRow).join("")}`; }).join("");
   else planHtml = entries.length ? entries.map(planRow).join("") : `<div class="empty" style="padding:14px">Nothing planned for ${DAYS_LONG[pref.day]}.</div>`;
-  main.innerHTML=`
+  main.innerHTML=`${backupBanner()}${restoreCard()}
     <div class="seg" id="mode"><button data-m="day" class="${!week?"on":""}">Day</button><button data-m="week" class="${week?"on":""}">Week</button></div>
     ${week?"":`<div class="days" id="days">${DAYS.map((d,i)=>`<button data-d="${i}" class="${i===pref.day?"on":""} ${daysHave.has(i)?"has":""}">${d}<span class="dot"></span></button>`).join("")}</div>`}
     <div class="card"><h3><span class="grow">${week?"This week vs weekly goal":DAYS_LONG[pref.day]+" vs daily goal"}</span><button class="btn ghost small" id="goals">Edit goals</button></h3>
@@ -367,7 +396,7 @@ function renderHome(){
   main.querySelectorAll("#days button").forEach(b=>b.onclick=()=>{ pref.day=+b.dataset.d; renderHome(); });
   $("#goals").onclick=openGoals; $("#conv").onclick=()=>openConverter(); $("#toGroc").onclick=()=>go({tab:"grocery"});
   if($("#clr")) $("#clr").onclick=()=>{ if(confirm("Remove all planned meals for the week?")){ P.entries=[]; P.have={}; save(); renderHome(); } };
-  bindPlanRows(renderHome);
+  bindPlanRows(renderHome); bindBackupBits();
 }
 function planRow(e){
   const r=rec(e.recipeId);
@@ -804,34 +833,26 @@ document.querySelectorAll("#pickSeg button").forEach(b=>b.onclick=()=>{ pick.kin
    ========================================================= */
 function renderSettings(){
   setHeader("Backup");
+  const last=getNum("-backup");
   main.innerHTML=`<div class="card"><h3>Your data</h3>
-    <p>${db.ingredients.length} ingredients · ${db.recipes.length} recipes · ${db.plan.entries.length} planned meals. Everything is stored only on this phone.</p>
+    <p>${db.ingredients.length} ingredients · ${db.recipes.length} recipes · ${db.plan.entries.length} planned meals.</p>
+    <p class="sub">Last backup: <b>${last?new Date(last).toLocaleString():"never"}</b></p>
     <div class="actions" style="justify-content:flex-start">
-      <button class="btn" id="exp">Export backup</button><button class="btn ghost" id="imp">Import backup</button>
-      <input type="file" id="file" accept="application/json,.json" hidden></div>
-    <p class="hint">Export now and then and save the file to iCloud Drive or Files, so nothing is lost if you change phones. Importing replaces what is on this phone.</p>
-    <div id="err" class="err"></div></div>
-    <div class="card"><h3>Install on iPhone</h3>
-    <p>In Safari, tap the Share button, then <b>Add to Home Screen</b>. It then opens full screen like a normal app and works offline.</p></div>`;
-  $("#exp").onclick=async()=>{
-    const txt=JSON.stringify({app:"macro-kitchen",version:2,exported:new Date().toISOString(),...db},null,1);
-    const name=`macros-backup-${new Date().toISOString().slice(0,10)}.json`;
-    const file=new File([txt],name,{type:"application/json"});
-    try{ if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:name}); return; } }catch(e){ if(e.name==="AbortError") return; }
-    const a=document.createElement("a"); a.href=URL.createObjectURL(file); a.download=name; document.body.appendChild(a); a.click(); a.remove();
-  };
-  $("#imp").onclick=()=>$("#file").click();
-  $("#file").onchange=async e=>{
-    const f=e.target.files[0]; if(!f) return;
-    try{ const d=JSON.parse(await f.text());
-      if(!Array.isArray(d.ingredients)||!Array.isArray(d.recipes)) throw new Error("bad");
-      if(!confirm(`Replace current data with ${d.ingredients.length} ingredients and ${d.recipes.length} recipes?`)) return;
-      db=migrate({ingredients:d.ingredients,recipes:d.recipes,plan:d.plan}); save(); toast("Imported"); renderSettings();
-    }catch(err){ $("#err").textContent="That file isn't a valid backup."; }
-  };
+      <button class="btn" id="exp">Back up now</button><button class="btn ghost" id="imp">Restore from backup</button></div>
+    <p class="hint">Back up saves a file. In the share sheet choose <b>Save to Files</b> and pick <b>iCloud Drive</b>. Restore replaces what is on this device.</p></div>
+    <div class="card"><h3>What keeps your data safe</h3>
+    <p class="sub" style="margin:0 0 6px">✅ <b>App updates never erase your data.</b> New versions arrive by themselves the next time you open the app online. You don't need to download anything again.</p>
+    <p class="sub" style="margin:0 0 6px">⚠️ <b>Deleting the home-screen icon deletes the data</b> stored in it (that's how iPhone and iPad work). Back up first, then use Restore after re-adding it.</p>
+    <p class="sub" style="margin:0">ℹ️ The app on your home screen and the same page open in Safari keep separate data. Use the home-screen app.</p>
+    <p class="hint" id="pst"></p></div>`;
+  $("#exp").onclick=async()=>{ if(await doExport()) renderSettings(); };
+  $("#imp").onclick=()=>pickRestore();
+  if(navigator.storage&&navigator.storage.persisted) navigator.storage.persisted().then(p=>{ const el=$("#pst"); if(el) el.textContent=p?"Storage is marked as protected on this device.":""; }).catch(()=>{});
 }
 
 render();
+// Ask the browser to protect this app's storage from automatic clean-up.
+try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{}); }catch(e){}
 if("serviceWorker" in navigator && window.isSecureContext && location.protocol!=="file:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
 <!--OCR_PAYLOAD-->
