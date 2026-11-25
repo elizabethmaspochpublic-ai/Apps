@@ -83,6 +83,8 @@ label.f span{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
 .line:last-child{border-bottom:0}
 .line input.qty{width:72px;text-align:right;padding:10px 8px}
 .line select.unit{width:86px;padding:10px 4px}
+.brand{font-weight:400;color:var(--muted);font-size:.92em}
+.brand::before{content:"· "}
 .tag{font-size:11px;background:var(--chip);color:var(--accent);border-radius:6px;padding:1px 6px;margin-left:4px;font-weight:600;vertical-align:middle}
 .hint{font-size:13px;color:var(--muted);margin:6px 0 0}
 .err{color:var(--danger);font-size:14px;margin:8px 0}
@@ -349,7 +351,11 @@ function render(){
     ingredients:()=>route.id?renderIngEdit():renderIngList(),
     recipes:()=>route.id?renderRecipe():renderRecList()}[route.tab]||renderHome)();
 }
-const byName=(a,b)=>a.name.localeCompare(b.name);
+const byName=(a,b)=>a.name.localeCompare(b.name) || (a.brand||"").localeCompare(b.brand||"");
+// Ingredient label with optional brand: "Peanut butter · Jif"
+const ingLabel=x=>x.brand ? `${x.name} · ${x.brand}` : x.name;
+const ingHtml=x=>`${esc(x.name)}${x.brand?` <span class="brand">${esc(x.brand)}</span>`:""}`;
+const ingMatch=(x,q)=>(x.name+" "+(x.brand||"")).toLowerCase().includes(q);
 function liveSearch(id, key, rerender){
   const qi=$(id); qi.oninput=()=>{ query[key]=qi.value; const p=qi.selectionStart; rerender(); const n=$(id); n.focus(); n.setSelectionRange(p,p); };
 }
@@ -402,7 +408,7 @@ function renderHome(){
 }
 function planRow(e){
   if(isSnack(e)){ const x=ing(e.ingId); const units=unitsFor(x); const list=units.includes(e.unit)?units:[e.unit,...units];
-    return `<div class="line" data-e="${e.id}"><div class="grow"><div>${x?esc(x.name):"<i>(deleted ingredient)</i>"}<span class="tag">snack</span></div>
+    return `<div class="line" data-e="${e.id}"><div class="grow"><div>${x?ingHtml(x):"<i>(deleted ingredient)</i>"}<span class="tag">snack</span></div>
       <div class="sub">${short(entryMacros(e))}</div></div>
       <input class="qty pq" inputmode="text" value="${esc(e.qty)}" aria-label="Amount">
       <select class="unit pu" aria-label="Unit">${unitOptions(list,e.unit)}</select>
@@ -433,7 +439,7 @@ function openPlanDialog(recipeId, mode, ingId){
       ${recs.length?`<label class="f"><span>Recipe</span><select id="pr">${recs.map(r=>`<option value="${r.id}" ${r.id===recipeId?"selected":""}>${esc(r.name)}</option>`).join("")}</select></label>
       <label class="f"><span>Servings you'll eat (each day)</span><input id="ps" inputmode="decimal" value="1"></label>`:`<p class="empty" style="padding:8px">No recipes yet.</p>`}</div>
     <div id="pmIng" ${mode==="ing"?"":"hidden"}>
-      ${ings.length?`<label class="f"><span>Ingredient</span><select id="pi">${ings.map(x=>`<option value="${x.id}" ${x.id===ingId?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>
+      ${ings.length?`<label class="f"><span>Ingredient</span><select id="pi">${ings.map(x=>`<option value="${x.id}" ${x.id===ingId?"selected":""}>${esc(ingLabel(x))}</option>`).join("")}</select></label>
       <span class="sub">Amount (each day)</span><div class="grid2" style="grid-template-columns:1fr 1.2fr;margin:4px 0 12px"><input id="pq" inputmode="text"><select id="pu"></select></div>`:`<p class="empty" style="padding:8px">No ingredients yet.</p>`}</div>
     <span class="sub">Which days</span>
     <div class="days" id="pd" style="margin-top:4px">${DAYS.map((d,i)=>`<button data-d="${i}" class="${sel.has(i)?"on":""}">${d}</button>`).join("")}</div>
@@ -485,7 +491,7 @@ function openConverter(){
       <select id="ct">${unitOptions(all,c.to)}</select></div>
     <div class="chips" id="cq">${["⅛","¼","⅓","½","⅔","¾","1","2"].map(v=>`<button>${v}</button>`).join("")}<button id="csw">⇅ swap</button></div>
     <label class="f"><span>Ingredient (for cups ↔ grams)</span><select id="ci"><option value="">None (weight ↔ weight, volume ↔ volume)</option><option value="__water" ${c.ing==="__water"?"selected":""}>Water / milk (1 ml ≈ 1 g)</option>
-      ${db.ingredients.filter(x=>x.gPerMl||x.gPerPiece).sort(byName).map(x=>`<option value="${x.id}" ${x.id===c.ing?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>
+      ${db.ingredients.filter(x=>x.gPerMl||x.gPerPiece).sort(byName).map(x=>`<option value="${x.id}" ${x.id===c.ing?"selected":""}>${esc(ingLabel(x))}</option>`).join("")}</select></label>
     <div class="bigres" id="cr"></div><p class="hint" style="text-align:center" id="cx"></p>
     <p class="hint">Amounts like 1/4, 1 1/2 or ¾ work. Ingredients appear in the list once they have a cup or piece weight.</p>`);
   const calc=()=>{
@@ -539,7 +545,7 @@ function renderGrocery(){
   const recipes=[...new Set(P.entries.filter(e=>!isSnack(e)).map(e=>e.recipeId))].map(rec).filter(Boolean);
   if(P.entries.some(isSnack)) recipes.push({name:"snacks"});
   const row=o=>`<label class="gitem ${P.have[o.x.id]?"have":""}"><input type="checkbox" data-i="${o.x.id}" ${P.have[o.x.id]?"checked":""}>
-     <div class="grow"><div class="name">${esc(o.x.name)}</div><div class="sub">${bestAmount(o.x,o.g)}</div></div></label>`;
+     <div class="grow"><div class="name">${ingHtml(o.x)}</div><div class="sub">${bestAmount(o.x,o.g)}</div></div></label>`;
   const xrow=e=>`<label class="gitem ${e.have?"have":""}"><input type="checkbox" data-x="${e.id}" ${e.have?"checked":""}>
      <div class="grow name">${esc(e.text)}</div><button class="btn danger small" data-xd="${e.id}" aria-label="Remove">✕</button></label>`;
   main.innerHTML=`
@@ -559,7 +565,7 @@ function renderGrocery(){
 }
 async function shareGrocery(){
   const {items}=groceryData(); const P=db.plan;
-  const lines=[...items.filter(o=>!P.have[o.x.id]).map(o=>`• ${o.x.name}: ${bestAmount(o.x,o.g)}`), ...P.extra.filter(e=>!e.have).map(e=>`• ${e.text}`)];
+  const lines=[...items.filter(o=>!P.have[o.x.id]).map(o=>`• ${ingLabel(o.x)}: ${bestAmount(o.x,o.g)}`), ...P.extra.filter(e=>!e.have).map(e=>`• ${e.text}`)];
   if(!lines.length) return toast("Nothing to buy");
   const text="Grocery list\n"+lines.join("\n");
   try{ if(navigator.share){ await navigator.share({text}); return; } }catch(e){ if(e.name==="AbortError") return; }
@@ -572,9 +578,9 @@ async function shareGrocery(){
 function renderIngList(){
   setHeader("Ingredients", `<button class="btn small">+ New</button>`, ()=>go({tab:"ingredients",id:"new"}));
   const q=query.ingredients.toLowerCase();
-  const list=db.ingredients.filter(x=>x.name.toLowerCase().includes(q)).sort(byName);
+  const list=db.ingredients.filter(x=>ingMatch(x,q)).sort(byName);
   main.innerHTML=`<input class="search" id="q" placeholder="Search ingredients" value="${esc(query.ingredients)}" autocomplete="off">
-    ${list.length?`<div class="list">${list.map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${esc(x.name)}</div>
+    ${list.length?`<div class="list">${list.map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${ingHtml(x)}</div>
       <div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}</div></div><span class="chev">›</span></button>`).join("")}</div>`
     : `<div class="empty">${db.ingredients.length?"No matches.":"No ingredients yet. Tap <b>+ New</b> to scan a nutrition label or type one in."}</div>`}`;
   liveSearch("#q","ingredients",renderIngList);
@@ -595,7 +601,8 @@ function renderIngEdit(){
     <button class="btn" id="scan">📷 Scan</button></div><input type="file" id="scanFile" accept="image/*" hidden>
     <div id="scanStatus" class="hint"></div></div>
   <div class="card">
-    <label class="f"><span>Name</span><input id="nm" value="${esc(x.name)}" placeholder="e.g. Rolled oats" autocomplete="off"></label>
+    <div class="grid2"><label class="f"><span>Name</span><input id="nm" value="${esc(x.name)}" placeholder="e.g. Rolled oats" autocomplete="off"></label>
+    <label class="f"><span>Brand (optional)</span><input id="br" value="${esc(x.brand||"")}" placeholder="e.g. Quaker" autocomplete="off"></label></div>
     <span class="sub">Nutrition values are for</span>
     <div class="grid2" style="grid-template-columns:1fr 1.2fr;margin:4px 0 10px">
       <input id="sq" inputmode="text" value="${esc(sv.qty)}" aria-label="Serving amount">
@@ -629,7 +636,8 @@ function renderIngEdit(){
   $("#save").onclick=()=>{
     const err=m=>{ $("#err").textContent=m; };
     const name=$("#nm").value.trim(); if(!name) return err("Give it a name.");
-    if(db.ingredients.some(o=>o.id!==x.id&&o.name.toLowerCase()===name.toLowerCase())) return err("An ingredient with that name already exists.");
+    const brand=$("#br").value.trim();
+    if(db.ingredients.some(o=>o.id!==x.id&&o.name.toLowerCase()===name.toLowerCase()&&(o.brand||"").toLowerCase()===brand.toLowerCase())) return err(brand?"You already have this ingredient from that brand.":"An ingredient with that name already exists. Add a brand to keep both.");
     const sq=parseQty($("#sq").value), su=$("#su").value, U=UNITS[su];
     if(!(sq>0)) return err("Check the serving amount (e.g. 1, 1/4, 100).");
     let grams;
@@ -642,13 +650,13 @@ function renderIngEdit(){
     let gPerMl=null, gPerPiece=null;
     if(U.t==="v") gPerMl=grams/(sq*U.f); else { const c=parseQty($("#cw").value); if(c>0) gPerMl=c/CUP; }
     if(su==="piece") gPerPiece=grams/sq; else { const p=parseQty($("#pw").value); if(p>0) gPerPiece=p; }
-    Object.assign(x,{name, per, serving:{qty:$("#sq").value.trim(), unit:su, grams}, gPerMl, gPerPiece});
+    Object.assign(x,{name, brand: brand||undefined, per, serving:{qty:$("#sq").value.trim(), unit:su, grams}, gPerMl, gPerPiece});
     if(isNew) db.ingredients.push(x); save(); toast("Saved"); go({tab:"ingredients"});
   };
   if(!isNew) $("#snack").onclick=()=>openPlanDialog(null,"ing",x.id);
   if(!isNew) $("#del").onclick=()=>{
     if(usedIn.length) return $("#err").textContent=`Remove it from ${usedIn.map(r=>r.name).join(", ")} first.`;
-    if(!confirm(`Delete ${x.name}?`)) return;
+    if(!confirm(`Delete ${ingLabel(x)}?`)) return;
     db.ingredients=db.ingredients.filter(o=>o.id!==x.id); db.plan.entries=db.plan.entries.filter(e=>!(isSnack(e)&&e.ingId===x.id)); save(); go({tab:"ingredients"});
   };
 }
@@ -824,7 +832,7 @@ function refreshSummary(){
 }
 function itemRow(it,i){
   const isRec=it.kind==="rec", obj=isRec?rec(it.id):ing(it.id);
-  const name=obj?esc(obj.name):"<i>(deleted)</i>";
+  const name=obj?(isRec?esc(obj.name):ingHtml(obj)):"<i>(deleted)</i>";
   let list = isRec ? ["serving","batch","g","oz","lb"] : unitsFor(obj);
   if(!list.includes(it.unit)) list=[it.unit, ...list];
   return `<div class="line" data-i="${i}"><div class="grow"><div>${name}${isRec?`<span class="tag">recipe</span>`:""}</div>
@@ -842,8 +850,8 @@ function drawPicker(){
   document.querySelectorAll("#pickSeg button").forEach(b=>b.classList.toggle("on", b.dataset.k===pick.kind));
   let rows;
   if(pick.kind==="ing"){
-    rows=db.ingredients.filter(x=>x.name.toLowerCase().includes(q)).sort(byName)
-      .map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${esc(x.name)}</div><div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}</div></div><span>＋</span></button>`);
+    rows=db.ingredients.filter(x=>ingMatch(x,q)).sort(byName)
+      .map(x=>`<button class="item" data-id="${x.id}"><div class="grow"><div class="name">${ingHtml(x)}</div><div class="sub">per ${esc(servingText(x))}: ${short(add(zero(),x.per,x.serving.grams))}</div></div><span>＋</span></button>`);
     if(!db.ingredients.length) rows=[`<div class="empty">No ingredients yet. Add some in the Ingredients tab.</div>`];
   } else {
     rows=db.recipes.filter(x=>x.id!==r.id&&x.name.toLowerCase().includes(q)).sort(byName).map(x=>{ const ok=canNest(r.id,x.id);
