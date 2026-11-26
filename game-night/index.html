@@ -499,7 +499,7 @@ async function openGame(g) {
   if (!needsSetup) return launch(g, opts);
   const names = store.get('names', ['Player 1', 'Player 2', 'Player 3', 'Player 4', 'Player 5', 'Player 6']);
   const cpu = g.ai ? store.get('cpu:' + g.id, [false, false, false, false, false, false]) : [];
-  let level = store.get('cpuLevel', 1);
+  let level = store.get('cpuLevel:' + g.id, store.get('cpuLevel', 1));
   const wrap = h('div', { class: 'sheet-body' });
   const lvlSeg = h('div', { class: 'seg', role: 'group' });
   ['Easy', 'Medium', 'Hard'].forEach((l, k) => lvlSeg.append(h('button', { 'aria-pressed': String(level === k), onclick: e => { level = k; lvlSeg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', 'false')); e.currentTarget.setAttribute('aria-pressed', 'true'); } }, l)));
@@ -535,7 +535,7 @@ async function openGame(g) {
   if (!go) return;
   store.set('opts:' + g.id, opts);
   store.set('names', names);
-  if (g.ai) { store.set('cpu:' + g.id, cpu); store.set('cpuLevel', level); }
+  if (g.ai) { store.set('cpu:' + g.id, cpu); store.set('cpuLevel:' + g.id, level); store.set('cpuLevel', level); }
   launch(g, opts, g.ai ? cpu : null, level);
 }
 
@@ -597,11 +597,11 @@ function launch(g, opts, cpuFlags, level) {
       S.finished = true;
       const v = await modal({ title, body: text ? '<p>' + text + '</p>' : null, actions: [{ label: 'All games', value: 'home' }, { label: 'Look at board', value: 'stay' }, { label: 'Play again', value: 'again', primary: true }] });
       if (!api.alive()) return;
-      if (v === 'again') launch(g, opts);
+      if (v === 'again') launch(g, { ...opts }, cpuFlags && cpuFlags.slice(), level);
       else if (v === 'home') goHome();
     },
     finish() { S.finished = true; },
-    restart: () => launch(g, opts)
+    restart: () => launch(g, { ...opts }, cpuFlags && cpuFlags.slice(), level)
   };
   S.api = api;
   g.start(stage, api);
