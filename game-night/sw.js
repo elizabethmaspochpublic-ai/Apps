@@ -1,7 +1,7 @@
 // Game Night offline support.
 // The app, word list and icons are cached on install. Pages: network first so updates arrive, cache when offline.
 // Fonts from Google are cached the first time they load, so each look keeps its fonts offline.
-const CACHE = "game-night-972a664b26";
+const CACHE = "game-night-9c05b18143";
 const FILES = ["./", "index.html", "words.txt", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", e => e.waitUntil(

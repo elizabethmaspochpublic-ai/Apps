@@ -67,6 +67,11 @@ h1,h2,h3{font-family:var(--font-display);text-wrap:balance;margin:0;letter-spaci
 .box .box-help{position:absolute;right:8px;bottom:8px;z-index:2;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);display:grid;place-items:center;padding:0}
 .box .box-help svg{width:20px;height:20px}
 .box .box-help:hover{background:var(--cell-sel)}
+.box .box-fav{position:absolute;right:6px;top:6px;z-index:2;width:40px;height:40px;border-radius:50%;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;padding:0;opacity:.75}
+.box .box-fav svg{width:24px;height:24px}
+.box .box-fav[aria-pressed="true"]{color:#e8a317;opacity:1}
+.box .box-fav[aria-pressed="true"] svg{fill:currentColor}
+.box .box-fav:active{transform:scale(.88)}
 .box .meta{padding-right:38px}
 .search{position:relative}
 .search .input{padding-left:40px;font-size:16px}
@@ -310,6 +315,10 @@ h1,h2,h3{font-family:var(--font-display);text-wrap:balance;margin:0;letter-spaci
 [data-skin="sketch"] .tag,[data-skin="sketch"] .field label{font-size:15px;letter-spacing:.02em}
 [data-skin="toybox"] .box .box-help{border:3px solid #141414;background:#f6c33b;box-shadow:2px 2px 0 #141414}
 [data-skin="arcade"] .box .box-help{background:#0d0826;border:1.5px solid var(--glow,#24e0f0);color:var(--glow,#24e0f0);box-shadow:0 0 8px -2px var(--glow,#24e0f0)}
+[data-skin="walnut"] .box .box-fav[aria-pressed="true"]{color:#f0d58f}
+[data-skin="arcade"] .box .box-fav[aria-pressed="true"]{color:#ffe14d;filter:drop-shadow(0 0 4px #ffe14d)}
+[data-skin="toybox"] .box .box-fav[aria-pressed="true"]{color:#f6c33b}
+[data-skin="toybox"] .box .box-fav[aria-pressed="true"] svg{stroke:#141414}
 [data-skin="walnut"] .box .box-help{background:transparent;border:1px solid #c9a45c;color:#f0d58f}
 [data-skin="sketch"] .box .box-help{border:2px solid #24304a;background:#fff6c2;border-radius:var(--wob1)}
 </style>
@@ -327,6 +336,7 @@ h1,h2,h3{font-family:var(--font-display);text-wrap:balance;margin:0;letter-spaci
       <div class="search"><span class="search-ic" aria-hidden="true"></span><input id="search" class="input" type="search" placeholder="Search games, e.g. Tetris or Falling Blocks" aria-label="Search games" autocomplete="off" spellcheck="false"></div>
       <nav class="filters" aria-label="Filter games">
         <button class="chip" data-f="all">All games</button>
+        <button class="chip" data-f="fav">★ Favorites</button>
         <button class="chip" data-f="solo">Play solo</button>
         <button class="chip" data-f="multi">Pass &amp; play</button>
       </nav>
@@ -384,6 +394,7 @@ const store = {
 const fmtTime = s => { s = Math.max(0, s | 0); return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); };
 const PCOLORS = ['var(--p1)', 'var(--p2)', 'var(--p3)', 'var(--p4)', 'var(--p5)', 'var(--p6)'];
 const ICON = {
+  star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.2l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 17l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8z"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
   restart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/></svg>',
   help: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 .9-1 1.6v.4"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>',
@@ -446,6 +457,8 @@ function showView(name) {
   $('#play').hidden = name !== 'play';
 }
 let filter = 'all', query = '';
+const favs = new Set(store.get('favs', [])); // favourite games, saved on this device
+function toggleFav(g) { favs.has(g.id) ? favs.delete(g.id) : favs.add(g.id); store.set('favs', [...favs]); renderHome(); }
 // extra search words (other names people use) on top of AKA
 const ALSO = { four: 'connect 4', dice: 'yatzy', star: 'halma', go: 'baduk weiqi igo', dots: 'boxes pigs in a pen', hangman: 'word guess', mancala: 'kalah oware', tictactoe: 'noughts and crosses xo', clash: 'uno', poker: 'texas holdem hold em', pachisi: 'ludo', rummy: 'rummikub', loop: 'slither link fences', fence: 'wall go devils plan', hedge: 'quoridor corridor', territory: 'blokus', words: 'scrabble words with friends', blocks: 'tetris', mines: 'minesweeper', phases: 'phase ten' };
 const norm = t => (t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -460,7 +473,8 @@ function renderHome() {
   const shelf = $('#shelf');
   shelf.innerHTML = '';
   const rank = g => !query ? 0 : norm(g.name) === norm(query) ? 0 : norm(g.name).startsWith(norm(query)) ? 1 : norm(g.name).includes(norm(query)) ? 2 : 3;
-  const list = GAMES.filter(g => (filter === 'all' || (filter === 'solo' ? g.solo : g.multi)) && matches(g, query)).sort((a, b) => rank(a) - rank(b));
+  const fav = g => favs.has(g.id) ? 0 : 1;
+  const list = GAMES.filter(g => (filter === 'all' || (filter === 'fav' ? favs.has(g.id) : filter === 'solo' ? g.solo : g.multi)) && matches(g, query)).sort((a, b) => rank(a) - rank(b) || fav(a) - fav(b));
   list.forEach(g => {
     const aka = AKA[g.id] && query && norm(AKA[g.id] + ' ' + (ALSO[g.id] || '')).includes(norm(query)) && !norm(g.name).includes(norm(query)) ? AKA[g.id] : null;
     shelf.append(h('div', { class: 'box' },
@@ -468,9 +482,10 @@ function renderHome() {
       h('div', { class: 'name' }, g.name),
       h('div', { class: 'meta' }, aka ? `Also known as ${aka} · ${g.meta}` : g.meta),
       h('button', { class: 'box-open', onclick: () => openGame(g), 'aria-label': 'Play ' + g.name }),
+      h('button', { class: 'box-fav', 'aria-pressed': String(favs.has(g.id)), onclick: e => { e.stopPropagation(); toggleFav(g); }, 'aria-label': (favs.has(g.id) ? 'Remove ' : 'Add ') + g.name + (favs.has(g.id) ? ' from favorites' : ' to favorites'), title: favs.has(g.id) ? 'Favorite' : 'Add to favorites', html: ICON.star }),
       g.rules ? h('button', { class: 'box-help', onclick: e => { e.stopPropagation(); showRules(g); }, 'aria-label': 'Rules for ' + g.name, title: 'Rules', html: ICON.help }) : null));
   });
-  if (!list.length) shelf.append(h('p', { class: 'muted shelf-empty' }, query ? `No games match "${query}".` : 'No games here.'));
+  if (!list.length) shelf.append(h('p', { class: 'muted shelf-empty' }, query ? `No games match "${query}".` : filter === 'fav' ? 'No favorites yet. Tap the star on any game to add it here.' : 'No games here.'));
   document.querySelectorAll('.filters .chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.f === filter));
 }
 
